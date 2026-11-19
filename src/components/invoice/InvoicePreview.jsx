@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useReactToPrint } from 'react-to-print';
+import { formatInvoiceNumber } from '../../utils/auditLog';
 import SafeIcon from '../../common/SafeIcon';
 import * as FiIcons from 'react-icons/fi';
 
@@ -111,6 +112,9 @@ const InvoicePreview = ({ invoiceData, onClose }) => {
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', padding: '8px 0' }}>
                 <div style={{ fontSize: '11px' }}>
                   <div style={{ marginBottom: '4px' }}><strong>Date:</strong> {new Date(invoiceData.date).toLocaleDateString()}</div>
+                  {invoiceData.invoiceNumber && (
+                    <div style={{ marginBottom: '4px' }}><strong>Invoice #:</strong> {formatInvoiceNumber(invoiceData.invoiceNumber)}</div>
+                  )}
                   <div><strong>P.O.#:</strong> {invoiceData.poNumber || 'N/A'}</div>
                 </div>
                 <div style={{ fontSize: '11px', textAlign: 'right' }}>

@@ -101,8 +101,59 @@ SELECT pg_temp.assert((SELECT count(*) FROM invoice_items_ff2024) = 1, 'restore 
 SELECT pg_temp.assert((SELECT value FROM settings_ff2024 WHERE key='tax_rate') = '7.5', 'restore set tax rate');
 SELECT pg_temp.assert((SELECT count(*) FROM users_ff2024) = 3, 'restore never touches users');
 
+-- invoice numbers + audit trail (as office; fixtures inserted earlier by superuser)
+SELECT pg_temp.assert((SELECT count(DISTINCT invoice_number) FROM invoices_ff2024) = (SELECT count(*) FROM invoices_ff2024), 'invoice numbers are unique');
+SELECT pg_temp.assert((SELECT invoice_number FROM invoices_ff2024 WHERE id='30000000-0000-0000-0000-000000000001') IS NOT NULL, 'restored invoice has a number');
+SELECT pg_temp.assert((SELECT count(*) FROM invoice_events WHERE action='restored') = 1, 'restore logs a single event');
+SELECT pg_temp.assert((SELECT count(*) FROM invoice_events WHERE action='created' AND invoice_id='30000000-0000-0000-0000-000000000001') = 0, 'restore does not log per-invoice events');
+DO $$ BEGIN
+  INSERT INTO invoice_events (action) VALUES ('forged'); RAISE EXCEPTION 'FAILED: office forged an event';
+EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok - events cannot be inserted by users'; END $$;
+DO $$ BEGIN
+  DELETE FROM invoice_events; RAISE EXCEPTION 'FAILED: office deleted events';
+EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok - events cannot be deleted'; END $$;
+DO $$ BEGIN
+  UPDATE invoice_events SET actor_name='x'; RAISE EXCEPTION 'FAILED: office edited events';
+EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok - events cannot be edited'; END $$;
+
+-- restore preserves numbers and keeps the sequence above them
+SELECT restore_backup('{"version":"1","data":{"invoices":[
+  {"id":"40000000-0000-0000-0000-000000000001","invoiceNumber":500,"salesRep":"Amy","items":[{"qty":1,"unitPrice":1}]},
+  {"id":"40000000-0000-0000-0000-000000000002","salesRep":"Amy","items":[{"qty":1,"unitPrice":1}]}]}}');
+SELECT pg_temp.assert((SELECT invoice_number FROM invoices_ff2024 WHERE id='40000000-0000-0000-0000-000000000001') = 500, 'restore keeps invoice number 500');
+SELECT pg_temp.assert((SELECT invoice_number FROM invoices_ff2024 WHERE id='40000000-0000-0000-0000-000000000002') > 500, 'unnumbered invoice gets a number above the max');
+
+-- as Amy: numbering + events
+SELECT pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+CREATE TEMP TABLE amy_inv AS SELECT save_invoice('{"date":"2026-02-01","customerName":"Z","taxRate":0}', '[{"qty":1,"unitPrice":10,"description":"a"}]') AS id;
+GRANT ALL ON amy_inv TO PUBLIC;
+SELECT pg_temp.assert((SELECT invoice_number FROM invoices_ff2024 WHERE id=(SELECT id FROM amy_inv)) > 500, 'new invoice gets the next number');
+SELECT pg_temp.assert((SELECT actor_name FROM invoice_events WHERE invoice_id=(SELECT id FROM amy_inv) AND action='created') = 'Amy', 'created event records the actor');
+DO $$ DECLARE n bigint; BEGIN
+  SELECT invoice_number INTO n FROM invoices_ff2024 WHERE id=(SELECT id FROM amy_inv);
+  UPDATE invoices_ff2024 SET invoice_number = 1 WHERE id=(SELECT id FROM amy_inv);
+  PERFORM pg_temp.assert((SELECT invoice_number FROM invoices_ff2024 WHERE id=(SELECT id FROM amy_inv)) = n, 'salesman cannot change an invoice number');
+END $$;
+UPDATE invoices_ff2024 SET status='completed' WHERE id=(SELECT id FROM amy_inv);
+UPDATE invoices_ff2024 SET archived=true WHERE id=(SELECT id FROM amy_inv);
+SELECT pg_temp.assert((SELECT changes->'status'->>'to' FROM invoice_events WHERE invoice_id=(SELECT id FROM amy_inv) AND action='status_changed') = 'completed', 'status change logged with before/after');
+SELECT pg_temp.assert(EXISTS (SELECT 1 FROM invoice_events WHERE invoice_id=(SELECT id FROM amy_inv) AND action='archived'), 'archive logged');
+SELECT save_invoice(jsonb_build_object('id',(SELECT id FROM amy_inv),'date','2026-02-01','customerName','Z','taxRate',0,'status','completed'), '[{"qty":2,"unitPrice":10,"description":"a"},{"qty":1,"unitPrice":5,"description":"b"}]');
+SELECT pg_temp.assert((SELECT (changes->'items'->>'added')::int FROM invoice_events WHERE invoice_id=(SELECT id FROM amy_inv) AND action='updated' ORDER BY id DESC LIMIT 1) = 2
+  AND (SELECT (changes->'items'->>'removed')::int FROM invoice_events WHERE invoice_id=(SELECT id FROM amy_inv) AND action='updated' ORDER BY id DESC LIMIT 1) = 1, 'item edits logged (2 added, 1 removed)');
+SELECT save_invoice(jsonb_build_object('id',(SELECT id FROM amy_inv),'date','2026-02-01','customerName','Z','taxRate',0,'status','completed'), '[{"qty":2,"unitPrice":10,"description":"a"},{"qty":1,"unitPrice":5,"description":"b"}]');
+SELECT pg_temp.assert((SELECT count(*) FROM invoice_events WHERE invoice_id=(SELECT id FROM amy_inv) AND action='updated') = 1, 'no-op save logs nothing');
+SELECT pg_temp.assert((SELECT count(*) FROM invoice_events) = (SELECT count(*) FROM invoice_events WHERE invoice_id IN (SELECT id FROM invoices_ff2024)), 'salesman only sees events of invoices they can see');
+DO $$ BEGIN
+  INSERT INTO invoice_events (action) VALUES ('forged'); RAISE EXCEPTION 'FAILED: salesman forged an event';
+EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok - salesman cannot forge events'; END $$;
+SELECT pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+SELECT delete_invoice((SELECT id FROM amy_inv));
+SELECT pg_temp.assert(EXISTS (SELECT 1 FROM invoice_events WHERE action='deleted' AND invoice_id=(SELECT id FROM amy_inv)), 'deletion logged and history survives');
+SELECT pg_temp.assert((SELECT count(*) FROM invoice_events WHERE invoice_id=(SELECT id FROM amy_inv)) >= 5, 'history of deleted invoice is kept');
+
 -- rename sync
 RESET ROLE;
 UPDATE users_ff2024 SET name='Amy B' WHERE username='amy';
-SELECT pg_temp.assert((SELECT sales_rep FROM invoices_ff2024 WHERE id='30000000-0000-0000-0000-000000000001') = 'Amy B', 'rename syncs invoice display name');
+SELECT pg_temp.assert((SELECT sales_rep FROM invoices_ff2024 WHERE id='40000000-0000-0000-0000-000000000001') = 'Amy B', 'rename syncs invoice display name');
 \echo ALL RLS TESTS PASSED

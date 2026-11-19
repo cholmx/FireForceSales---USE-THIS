@@ -73,6 +73,7 @@ export const DataProvider = ({ children }) => {
       poNumber: invoice.po_number,
       salesRep: invoice.sales_rep,
       salesRepId: invoice.sales_rep_id,
+      invoiceNumber: invoice.invoice_number,
       transactionType: invoice.transaction_type,
       customerName: invoice.customer_name,
       company: invoice.company,

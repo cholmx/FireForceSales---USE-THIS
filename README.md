@@ -40,6 +40,15 @@ Accounts created by the script (and by an admin password reset) must choose thei
 
 Then apply the migrations. Never put the service-role key in the browser or in `.env` files that ship with the app.
 
+## Invoice numbers & audit trail
+
+- Every invoice gets a database-assigned sequential number shown as `FF-000123` (existing invoices are
+  numbered oldest-first by the migration). Salesmen cannot choose or change it; backups keep their numbers.
+- `invoice_events` records who created, edited (with before/after values and line-item counts), changed the
+  status of, archived or deleted each invoice, and each backup restore. It is written only by triggers and can't be
+  edited or deleted through the API. History button per invoice; Office → Activity shows everything, including
+  deleted invoices.
+
 ## Accounts & passwords
 
 - Office → Users can create **salesman or office** accounts, reset passwords, and delete accounts

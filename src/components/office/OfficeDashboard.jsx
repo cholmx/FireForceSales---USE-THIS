@@ -10,12 +10,13 @@ const Settings = lazy(() => import('./Settings'));
 const UserManagement = lazy(() => import('./UserManagement'));
 const BackupSystem = lazy(() => import('./BackupSystem'));
 import BackupReminder from './BackupReminder';
+const ActivityLog = lazy(() => import('./ActivityLog'));
 const ReportsPage = lazy(() => import('./reports/ReportsPage'));
 import { backupScheduler } from '../../utils/backupScheduler';
 import SafeIcon from '../../common/SafeIcon';
 import * as FiIcons from 'react-icons/fi';
 
-const { FiBarChart3, FiFileText, FiUsers, FiSettings, FiUserCheck, FiShield, FiPieChart, FiPlusCircle } = FiIcons;
+const { FiBarChart3, FiFileText, FiUsers, FiSettings, FiUserCheck, FiShield, FiPieChart, FiPlusCircle, FiClock } = FiIcons;
 
 const OfficeDashboard = () => {
   const location = useLocation();
@@ -56,6 +57,7 @@ const OfficeDashboard = () => {
     { path: '/office/customers', label: 'Customers', icon: FiUsers },
     { path: '/office/users', label: 'Users', icon: FiUserCheck },
     { path: '/office/reports', label: 'Reports', icon: FiPieChart },
+    { path: '/office/activity', label: 'Activity', icon: FiClock },
     { path: '/office/backup', label: 'Backup', icon: FiShield },
     { path: '/office/settings', label: 'Settings', icon: FiSettings },
   ];
@@ -117,6 +119,7 @@ const OfficeDashboard = () => {
             <Route path="/customers" element={<CustomerManagement />} />
             <Route path="/users" element={<UserManagement />} />
             <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/activity" element={<ActivityLog />} />
             <Route path="/backup" element={<BackupSystem />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>

@@ -4,10 +4,12 @@ import { motion } from 'framer-motion';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import InvoicePreview from './InvoicePreview';
+import InvoiceHistory from './InvoiceHistory';
+import { formatInvoiceNumber } from '../../utils/auditLog';
 import SafeIcon from '../../common/SafeIcon';
 import * as FiIcons from 'react-icons/fi';
 
-const { FiPlus, FiEdit, FiEye, FiTrash2, FiSearch, FiFilter, FiArchive, FiRefreshCw, FiUser } = FiIcons;
+const { FiPlus, FiEdit, FiEye, FiTrash2, FiSearch, FiFilter, FiArchive, FiRefreshCw, FiUser, FiClock } = FiIcons;
 
 const InvoiceList = ({ userRole }) => {
   const { invoices, updateInvoice, deleteInvoice, users } = useData();
@@ -20,6 +22,7 @@ const InvoiceList = ({ userRole }) => {
   const [archiveFilter, setArchiveFilter] = useState('active');
   const [salesmanFilter, setSalesmanFilter] = useState('all');
   const [previewInvoice, setPreviewInvoice] = useState(null);
+  const [historyInvoice, setHistoryInvoice] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
 
   // Initialize filters from URL search params
@@ -39,6 +42,7 @@ const InvoiceList = ({ userRole }) => {
     const matchesSearch = invoice.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           invoice.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           invoice.poNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          formatInvoiceNumber(invoice.invoiceNumber).toLowerCase().includes(searchTerm.toLowerCase()) ||
                           invoice.salesRep?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || invoice.status === statusFilter;
     const matchesType = typeFilter === 'all' || invoice.transactionType === typeFilter;
@@ -215,7 +219,7 @@ const InvoiceList = ({ userRole }) => {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-5 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">Details</th>
+                <th className="px-5 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">Invoice</th>
                 <th className="px-5 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">Customer</th>
                 {userRole === 'office' && (
                   <th className="px-5 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">Rep</th>
@@ -237,7 +241,8 @@ const InvoiceList = ({ userRole }) => {
                 >
                   <td className="px-5 py-3 whitespace-nowrap">
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-gray-900">#{invoice.poNumber || 'N/A'}</span>
+                      <span className="text-xs font-semibold text-gray-900">{formatInvoiceNumber(invoice.invoiceNumber) || '—'}</span>
+                      <span className="text-[10px] text-gray-500">PO #{invoice.poNumber || 'N/A'}</span>
                       <span className="text-[10px] text-gray-400">{new Date(invoice.date).toLocaleDateString()}</span>
                       {invoice.archived && (
                         <span className="inline-flex mt-1 px-1.5 py-0.5 text-[9px] font-medium rounded bg-gray-100 text-gray-500 w-min">Archived</span>
@@ -294,6 +299,13 @@ const InvoiceList = ({ userRole }) => {
                   </td>
                   <td className="px-5 py-3 whitespace-nowrap text-right">
                     <div className="flex items-center justify-end space-x-2">
+                      <button 
+                        onClick={() => setHistoryInvoice(invoice)} 
+                        className="text-gray-400 hover:text-amber-600 transition-colors p-1 rounded hover:bg-amber-50" 
+                        title="History"
+                      >
+                        <SafeIcon icon={FiClock} className="text-sm" />
+                      </button>
                       <button 
                         onClick={() => setPreviewInvoice(invoice)} 
                         className="text-gray-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-blue-50" 
@@ -357,6 +369,10 @@ const InvoiceList = ({ userRole }) => {
           )}
         </div>
       </motion.div>
+
+      {historyInvoice && (
+        <InvoiceHistory invoice={historyInvoice} onClose={() => setHistoryInvoice(null)} />
+      )}
 
       {/* Preview Modal */}
       {previewInvoice && (
