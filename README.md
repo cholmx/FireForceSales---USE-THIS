@@ -36,7 +36,19 @@ SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... OFFICE_USERNAME=ffoffice1 OFFICE_
   node scripts/bootstrap-auth.mjs
 ```
 
+Accounts created by the script (and by an admin password reset) must choose their own password at first sign-in.
+
 Then apply the migrations. Never put the service-role key in the browser or in `.env` files that ship with the app.
+
+## Accounts & passwords
+
+- Office → Users can create **salesman or office** accounts, reset passwords, and delete accounts
+  (not yourself, and never the last office account).
+- Admin-set passwords are temporary: the user is prompted to choose their own at next sign-in.
+  (The flag lives in Supabase `user_metadata`; it is a UX prompt, not a security boundary.)
+- Anyone can change their own password from the header (current password required).
+- There is no email-based "forgot password": login emails are synthetic (`@fireforce.local`), so an office
+  admin resets it from Users. Real email reset would need an email provider and per-user real addresses.
 
 ## Scripts
 

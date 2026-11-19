@@ -302,6 +302,7 @@ export const DataProvider = ({ children }) => {
   const addUser = async (userData) => {
     const data = await callManageUsers({
       action: 'create',
+      role: userData.role,
       username: userData.username,
       name: userData.name,
       email: userData.email,

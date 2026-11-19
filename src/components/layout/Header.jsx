@@ -1,15 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
+import ChangePassword from '../auth/ChangePassword';
 import SafeIcon from '../../common/SafeIcon';
 import * as FiIcons from 'react-icons/fi';
 
-const { FiUser, FiLogOut, FiDatabase, FiWifi } = FiIcons;
+const { FiUser, FiLogOut, FiDatabase, FiWifi, FiKey } = FiIcons;
 
 const Header = ({ title }) => {
   const { user, logout } = useAuth();
   const { loading } = useData();
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   return (
     <motion.header 
@@ -47,6 +49,13 @@ const Header = ({ title }) => {
               <span className="text-xs font-semibold">{user?.name}</span>
               <span className="text-[10px] text-gray-400 bg-white px-1.5 py-0.5 rounded border border-gray-100 capitalize font-medium">{user?.role}</span>
             </div>
+            <button
+              onClick={() => setShowChangePassword(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all duration-200 text-xs font-medium"
+            >
+              <SafeIcon icon={FiKey} />
+              <span>Password</span>
+            </button>
             <button 
               onClick={logout} 
               className="flex items-center space-x-1.5 px-3 py-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 text-xs font-medium"
@@ -57,6 +66,7 @@ const Header = ({ title }) => {
           </div>
         </div>
       </div>
+      {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}
     </motion.header>
   );
 };

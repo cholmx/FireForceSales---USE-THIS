@@ -16,7 +16,7 @@ const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const emailFor = (u) => `${u.trim().toLowerCase()}@fireforce.local`;
 
 async function ensureAuthUser(username, password) {
-  const { data, error } = await admin.auth.admin.createUser({ email: emailFor(username), password, email_confirm: true });
+  const { data, error } = await admin.auth.admin.createUser({ email: emailFor(username), password, email_confirm: true, user_metadata: { must_change_password: true } });
   if (error) throw new Error(`${username}: ${error.message}`);
   return data.user.id;
 }

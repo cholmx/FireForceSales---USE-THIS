@@ -24,8 +24,9 @@ export const AuthProvider = ({ children }) => {
       .eq('auth_id', authUser.id)
       .maybeSingle();
     if (error || !data) { setUser(null); return null; }
-    setUser(data);
-    return data;
+    const profile = { ...data, mustChangePassword: authUser.user_metadata?.must_change_password === true };
+    setUser(profile);
+    return profile;
   };
 
   useEffect(() => {
@@ -48,7 +49,10 @@ export const AuthProvider = ({ children }) => {
         email: usernameToEmail(username),
         password,
       });
-      if (error) return { success: false, error: 'Invalid credentials' };
+      if (error) {
+        if (error.status === 429) return { success: false, error: 'Too many attempts. Please wait a minute and try again.' };
+        return { success: false, error: 'Invalid credentials' };
+      }
       const profile = await loadProfile(data.user);
       if (!profile) {
         await supabase.auth.signOut();
@@ -61,6 +65,24 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Re-verifies the current password, then sets the new one and clears the
+  // "temporary password" flag set by admin resets.
+  const changePassword = async (currentPassword, newPassword) => {
+    if (!user) return { success: false, error: 'Not signed in' };
+    if (newPassword.length < 8) return { success: false, error: 'Password must be at least 8 characters' };
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: usernameToEmail(user.username),
+      password: currentPassword,
+    });
+    if (verifyError) {
+      return { success: false, error: verifyError.status === 429 ? 'Too many attempts. Please wait a minute.' : 'Current password is incorrect' };
+    }
+    const { error } = await supabase.auth.updateUser({ password: newPassword, data: { must_change_password: false } });
+    if (error) return { success: false, error: error.message };
+    setUser(prev => (prev ? { ...prev, mustChangePassword: false } : prev));
+    return { success: true };
+  };
+
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -70,6 +92,7 @@ export const AuthProvider = ({ children }) => {
     user,
     login,
     logout,
+    changePassword,
     loading
   };
 

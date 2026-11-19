@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import Login from './components/auth/Login';
+import ChangePassword from './components/auth/ChangePassword';
 import SalesmanDashboard from './components/salesman/SalesmanDashboard';
 import OfficeDashboard from './components/office/OfficeDashboard';
 import InvoiceForm from './components/invoice/InvoiceForm';
@@ -38,6 +39,10 @@ function AppRoutes() {
 
   if (!user) {
     return <Login />;
+  }
+
+  if (user.mustChangePassword) {
+    return <ChangePassword forced />;
   }
 
   if (loadError) {

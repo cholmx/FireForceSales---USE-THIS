@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useData } from '../../context/DataContext';
+import { useAuth } from '../../context/AuthContext';
 import SafeIcon from '../../common/SafeIcon';
 import * as FiIcons from 'react-icons/fi';
 
@@ -8,6 +9,7 @@ const { FiPlus, FiEdit, FiTrash2, FiUser, FiEye, FiEyeOff, FiCheck, FiAlertCircl
 
 const UserManagement = () => {
   const { users, addUser, updateUser, deleteUser } = useData();
+  const { user: me } = useAuth();
   const [showSalesmanForm, setShowSalesmanForm] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [showPassword, setShowPassword] = useState({});
@@ -18,10 +20,11 @@ const UserManagement = () => {
     password: '',
     confirmPassword: '',
     email: '',
-    phone: ''
+    phone: '',
+    role: 'salesman'
   });
 
-  const salesmen = users.filter(user => user.role === 'salesman');
+  const accounts = users;
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
@@ -54,17 +57,17 @@ const UserManagement = () => {
       name: salesmanForm.name,
       email: salesmanForm.email,
       phone: salesmanForm.phone,
-      role: 'salesman',
+      role: salesmanForm.role,
       password: salesmanForm.password
     };
 
     try {
       if (editingUser) {
         await updateUser(editingUser.id, userData);
-        showNotification('Sales user updated successfully', 'success');
+        showNotification('User updated successfully', 'success');
       } else {
         await addUser(userData);
-        showNotification('Sales user added successfully', 'success');
+        showNotification('User added successfully', 'success');
       }
       resetSalesmanForm();
     } catch (err) {
@@ -79,7 +82,8 @@ const UserManagement = () => {
       password: '',
       confirmPassword: '',
       email: '',
-      phone: ''
+      phone: '',
+      role: 'salesman'
     });
     setShowSalesmanForm(false);
     setEditingUser(null);
@@ -92,16 +96,21 @@ const UserManagement = () => {
       email: user.email || '',
       phone: user.phone || '',
       password: '',
-      confirmPassword: ''
+      confirmPassword: '',
+      role: user.role
     });
     setEditingUser(user);
     setShowSalesmanForm(true);
   };
 
-  const handleDeleteSalesman = (user) => {
+  const handleDeleteSalesman = async (user) => {
     if (window.confirm(`Are you sure you want to delete ${user.name}? This action cannot be undone.`)) {
-      deleteUser(user.id);
-      showNotification('Sales user deleted successfully', 'success');
+      try {
+        await deleteUser(user.id);
+        showNotification('User deleted successfully', 'success');
+      } catch (err) {
+        showNotification(err.message || 'Failed to delete user', 'error');
+      }
     }
   };
 
@@ -146,13 +155,13 @@ const UserManagement = () => {
       >
         <div className="p-6 border-b border-gray-200">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-title font-semibold text-gray-900">Sales Users Management</h3>
+            <h3 className="text-lg font-title font-semibold text-gray-900">Accounts</h3>
             <button 
               onClick={() => setShowSalesmanForm(true)}
               className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
             >
               <SafeIcon icon={FiPlus} />
-              <span>Add Sales User</span>
+              <span>Add User</span>
             </button>
           </div>
         </div>
@@ -167,7 +176,7 @@ const UserManagement = () => {
           >
             <form onSubmit={handleSalesmanSubmit} className="p-6 space-y-6">
               <h4 className="text-md font-semibold text-gray-900">
-                {editingUser ? 'Edit Sales User' : 'Add New Sales User'}
+                {editingUser ? 'Edit User' : 'Add New User'}
               </h4>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -191,6 +200,18 @@ const UserManagement = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     required
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Role *</label>
+                  <select
+                    value={salesmanForm.role}
+                    onChange={(e) => setSalesmanForm(prev => ({ ...prev, role: e.target.value }))}
+                    disabled={!!editingUser}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:bg-gray-100"
+                  >
+                    <option value="salesman">Salesman</option>
+                    <option value="office">Office</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
@@ -261,7 +282,7 @@ const UserManagement = () => {
                   type="submit" 
                   className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                 >
-                  {editingUser ? 'Update Sales User' : 'Add Sales User'}
+                  {editingUser ? 'Update User' : 'Add User'}
                 </button>
               </div>
             </form>
@@ -270,9 +291,9 @@ const UserManagement = () => {
 
         {/* Salesmen List */}
         <div className="p-6">
-          {salesmen.length > 0 ? (
+          {accounts.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {salesmen.map((salesman, index) => (
+              {accounts.map((salesman, index) => (
                 <motion.div 
                   key={salesman.id}
                   initial={{ opacity: 0, scale: 0.9 }}
@@ -287,7 +308,10 @@ const UserManagement = () => {
                       </div>
                       <div>
                         <h4 className="font-semibold text-gray-900">{salesman.name}</h4>
-                        <p className="text-sm text-gray-500">@{salesman.username}</p>
+                        <p className="text-sm text-gray-500">
+                          @{salesman.username}
+                          <span className="ml-2 text-[10px] uppercase tracking-wide bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{salesman.role}</span>
+                        </p>
                       </div>
                     </div>
                     <div className="flex space-x-2">
@@ -298,6 +322,7 @@ const UserManagement = () => {
                       >
                         <SafeIcon icon={FiEdit} />
                       </button>
+                      {salesman.id !== me?.id && (
                       <button 
                         onClick={() => handleDeleteSalesman(salesman)}
                         className="text-red-600 hover:text-red-800"
@@ -305,6 +330,7 @@ const UserManagement = () => {
                       >
                         <SafeIcon icon={FiTrash2} />
                       </button>
+                      )}
                     </div>
                   </div>
                   
@@ -316,7 +342,7 @@ const UserManagement = () => {
                       <div><strong>Phone:</strong> {salesman.phone}</div>
                     )}
                     <div className="text-xs text-gray-400 mt-2">
-                      Last updated: {new Date(salesman.updatedAt || salesman.createdAt).toLocaleDateString()}
+                      Last updated: {new Date(salesman.updated_at || salesman.created_at).toLocaleDateString()}
                     </div>
                   </div>
                 </motion.div>
@@ -325,12 +351,12 @@ const UserManagement = () => {
           ) : (
             <div className="text-center py-12">
               <SafeIcon icon={FiUser} className="text-4xl text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500">No sales users added yet</p>
+              <p className="text-gray-500">No users yet</p>
               <button 
                 onClick={() => setShowSalesmanForm(true)}
                 className="mt-4 text-red-600 hover:text-red-700 font-medium"
               >
-                Add your first sales user
+                Add your first user
               </button>
             </div>
           )}
