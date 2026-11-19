@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Header from '../layout/Header';
@@ -6,11 +6,11 @@ import InvoiceForm from '../invoice/InvoiceForm';
 import InvoiceList from '../invoice/InvoiceList';
 import CustomerManagement from '../customer/CustomerManagement';
 import OfficeStats from './OfficeStats';
-import Settings from './Settings';
-import UserManagement from './UserManagement';
-import BackupSystem from './BackupSystem';
+const Settings = lazy(() => import('./Settings'));
+const UserManagement = lazy(() => import('./UserManagement'));
+const BackupSystem = lazy(() => import('./BackupSystem'));
 import BackupReminder from './BackupReminder';
-import ReportsPage from './reports/ReportsPage';
+const ReportsPage = lazy(() => import('./reports/ReportsPage'));
 import { backupScheduler } from '../../utils/backupScheduler';
 import SafeIcon from '../../common/SafeIcon';
 import * as FiIcons from 'react-icons/fi';
@@ -108,6 +108,7 @@ const OfficeDashboard = () => {
               <BackupReminder onCreateBackup={handleBackupCreated} onDismiss={handleDismissReminder} />
             </div>
           )}
+          <Suspense fallback={<div className="py-16 text-center text-sm text-gray-500">Loading...</div>}>
           <Routes>
             <Route path="/" element={<OfficeStats />} />
             <Route path="/invoice/new" element={<InvoiceForm />} />
@@ -119,6 +120,7 @@ const OfficeDashboard = () => {
             <Route path="/backup" element={<BackupSystem />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
+          </Suspense>
         </main>
       </div>
     </div>

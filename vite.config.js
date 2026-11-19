@@ -14,6 +14,16 @@ export default defineConfig({
   },
    build: {
     outDir: 'dist',
-    sourcemap: true
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          charts: ['echarts', 'echarts-for-react'],
+          pdf: ['jspdf', 'html2canvas'],
+          supabase: ['@supabase/supabase-js'],
+        },
+      },
+    },
   },
 });

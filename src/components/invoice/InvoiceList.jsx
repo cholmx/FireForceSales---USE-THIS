@@ -30,12 +30,10 @@ const InvoiceList = ({ userRole }) => {
     }
   }, [searchParams]);
 
-  const salesReps = [
-    { id: 'office_admin', name: 'Office Administrator' },
-    ...users
-      .filter(u => u.role === 'salesman')
-      .map(u => ({ id: u.id, name: u.name }))
-  ];
+  const salesReps = users.map(u => ({ id: u.id, name: u.name }));
+
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(0);
 
   const filteredInvoices = invoices.filter(invoice => {
     const matchesSearch = invoice.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -44,35 +42,47 @@ const InvoiceList = ({ userRole }) => {
                           invoice.salesRep?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || invoice.status === statusFilter;
     const matchesType = typeFilter === 'all' || invoice.transactionType === typeFilter;
-    const matchesUser = userRole === 'office' || invoice.salesRep === user?.name;
+    const matchesUser = userRole === 'office' || invoice.salesRepId === user?.id;
     const matchesArchive = archiveFilter === 'all' || 
                           (archiveFilter === 'active' && !invoice.archived) || 
                           (archiveFilter === 'archived' && invoice.archived);
-    const matchesSalesman = salesmanFilter === 'all' || invoice.salesRep === salesmanFilter;
+    const matchesSalesman = salesmanFilter === 'all' || invoice.salesRepId === salesmanFilter;
 
     return matchesSearch && matchesStatus && matchesType && matchesUser && matchesArchive && matchesSalesman;
   });
 
-  const handleStatusChange = (invoiceId, newStatus) => {
-    updateInvoice(invoiceId, { status: newStatus });
+  const pageCount = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pagedInvoices = filteredInvoices.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+  useEffect(() => { setPage(0); }, [searchTerm, statusFilter, typeFilter, archiveFilter, salesmanFilter]);
+
+  const [actionError, setActionError] = useState('');
+  const run = async (fn) => {
+    setActionError('');
+    try { await fn(); } catch (err) { setActionError(err.message || 'That action failed. Please try again.'); }
   };
+
+  const handleStatusChange = (invoiceId, newStatus) =>
+    run(() => updateInvoice(invoiceId, { status: newStatus }));
 
   const handleArchiveToggle = (invoiceId, currentArchiveState, status) => {
     if (!currentArchiveState && status !== 'completed') {
       alert('Only completed invoices can be archived.');
       return;
     }
-    updateInvoice(invoiceId, { archived: !currentArchiveState });
+    return run(() => updateInvoice(invoiceId, { archived: !currentArchiveState }));
   };
 
   const handleDeleteConfirm = (invoiceId) => {
     setConfirmDelete(invoiceId);
   };
 
-  const confirmDeleteInvoice = () => {
+  const confirmDeleteInvoice = async () => {
     if (confirmDelete) {
-      deleteInvoice(confirmDelete);
+      const id = confirmDelete;
       setConfirmDelete(null);
+      await run(() => deleteInvoice(id));
     }
   };
 
@@ -95,6 +105,9 @@ const InvoiceList = ({ userRole }) => {
 
   return (
     <div className="space-y-5">
+      {actionError && (
+        <div role="alert" className="bg-red-50 text-red-600 text-xs p-3 rounded-lg border border-red-100">{actionError}</div>
+      )}
       {/* Header */}
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold text-gray-900 tracking-tight">
@@ -164,7 +177,7 @@ const InvoiceList = ({ userRole }) => {
               >
                 <option value="all">All Reps</option>
                 {salesReps.map(salesRep => (
-                  <option key={salesRep.id} value={salesRep.name}>{salesRep.name}</option>
+                  <option key={salesRep.id} value={salesRep.id}>{salesRep.name}</option>
                 ))}
               </select>
               <SafeIcon icon={FiUser} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs pointer-events-none" />
@@ -214,7 +227,7 @@ const InvoiceList = ({ userRole }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredInvoices.map((invoice, index) => (
+              {pagedInvoices.map((invoice, index) => (
                 <motion.tr 
                   key={invoice.id}
                   initial={{ opacity: 0 }}
@@ -289,7 +302,7 @@ const InvoiceList = ({ userRole }) => {
                         <SafeIcon icon={FiEye} className="text-sm" />
                       </button>
                       
-                      {!invoice.archived && (userRole === 'office' || (userRole === 'salesman' && invoice.salesRep === user?.name)) && (
+                      {!invoice.archived && (userRole === 'office' || (userRole === 'salesman' && invoice.salesRepId === user?.id)) && (
                         <Link 
                           to={userRole === 'office' ? `/office/invoice/edit/${invoice.id}` : `/salesman/invoice/edit/${invoice.id}`} 
                           className="text-gray-400 hover:text-emerald-600 transition-colors p-1 rounded hover:bg-emerald-50" 
@@ -323,6 +336,18 @@ const InvoiceList = ({ userRole }) => {
             </tbody>
           </table>
           
+          {filteredInvoices.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-xs text-gray-600">
+              <span>Page {currentPage + 1} of {pageCount}</span>
+              <div className="space-x-2">
+                <button type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}
+                  className="px-3 py-1.5 border border-gray-200 rounded-lg font-semibold hover:bg-gray-50 disabled:opacity-40">Previous</button>
+                <button type="button" disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}
+                  className="px-3 py-1.5 border border-gray-200 rounded-lg font-semibold hover:bg-gray-50 disabled:opacity-40">Next</button>
+              </div>
+            </div>
+          )}
+
           {filteredInvoices.length === 0 && (
             <div className="text-center py-16 bg-gray-50/30">
               <SafeIcon icon={FiSearch} className="mx-auto h-8 w-8 text-gray-300 mb-3" />

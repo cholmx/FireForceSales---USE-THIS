@@ -18,6 +18,7 @@ export const DataProvider = ({ children }) => {
   const [officeInfo, setOfficeInfo] = useState({});
   const [settings, setSettings] = useState({ taxRate: 8.0 });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   const { user: authUser } = useAuth();
 
@@ -34,6 +35,7 @@ export const DataProvider = ({ children }) => {
   const loadAllData = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       await Promise.all([
         loadInvoices(),
         loadCustomers(),
@@ -43,35 +45,34 @@ export const DataProvider = ({ children }) => {
       ]);
     } catch (error) {
       console.error('Error loading data from Supabase:', error);
-      loadFromLocalStorage();
+      setLoadError(error.message || 'Could not load data');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadFromLocalStorage = () => {
-    const savedInvoices = localStorage.getItem('fireforce_invoices');
-    const savedCustomers = localStorage.getItem('fireforce_customers');
-    const savedUsers = localStorage.getItem('fireforce_users');
-    const savedOfficeInfo = localStorage.getItem('fireforce_office');
-    const savedSettings = localStorage.getItem('fireforce_settings');
-    if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
-    if (savedCustomers) setCustomers(JSON.parse(savedCustomers));
-    if (savedUsers) setUsers(JSON.parse(savedUsers));
-    if (savedOfficeInfo) setOfficeInfo(JSON.parse(savedOfficeInfo));
-    if (savedSettings) setSettings(JSON.parse(savedSettings));
+  // PostgREST caps a response at 1000 rows by default; page through everything.
+  const fetchAll = async (buildQuery, pageSize = 1000) => {
+    const rows = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+      if (error) throw error;
+      rows.push(...data);
+      if (data.length < pageSize) return rows;
+    }
   };
 
   const loadInvoices = async () => {
-    const { data, error } = await supabase
+    const data = await fetchAll(() => supabase
       .from('invoices_ff2024')
       .select(`*, invoice_items_ff2024 (*)`)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
+      .order('created_at', { ascending: false })
+      .order('id'));
     const formatted = data.map(invoice => ({
       ...invoice,
       poNumber: invoice.po_number,
       salesRep: invoice.sales_rep,
+      salesRepId: invoice.sales_rep_id,
       transactionType: invoice.transaction_type,
       customerName: invoice.customer_name,
       company: invoice.company,
@@ -103,11 +104,11 @@ export const DataProvider = ({ children }) => {
   };
 
   const loadCustomers = async () => {
-    const { data, error } = await supabase
+    const data = await fetchAll(() => supabase
       .from('customers_ff2024')
       .select('*')
-      .order('name');
-    if (error) throw error;
+      .order('name')
+      .order('id'));
     const formatted = data.map(customer => ({
       ...customer,
       company: customer.company || '',
@@ -174,110 +175,66 @@ export const DataProvider = ({ children }) => {
 
   // ─── Invoice Operations ───────────────────────────────────────────────────
 
-  const addInvoice = async (invoiceData) => {
-    const invoiceId = uuidv4();
-    const { error: invoiceError } = await supabase
-      .from('invoices_ff2024')
-      .insert([{
-        id: invoiceId,
-        date: invoiceData.date,
-        po_number: invoiceData.poNumber,
-        sales_rep: invoiceData.salesRep,
-        transaction_type: invoiceData.transactionType,
-        customer_name: invoiceData.customerName,
-        company: invoiceData.company,
-        customer_email: invoiceData.customerEmail,
-        customer_phone: invoiceData.customerPhone,
-        accounts_payable_email: invoiceData.accountsPayableEmail,
-        bill_to_address: invoiceData.billToAddress,
-        ship_to_address: invoiceData.shipToAddress,
-        shipping_cost: invoiceData.shippingCost,
-        additional_info: invoiceData.additionalInfo,
-        status: invoiceData.status || 'pending',
-        tax_rate: invoiceData.taxRate,
-        subtotal: invoiceData.subtotal,
-        tax: invoiceData.tax,
-        grand_total: invoiceData.grandTotal,
-        archived: false,
-      }]);
-    if (invoiceError) throw invoiceError;
+  const toRpcPayload = (inv) => ({
+    id: inv.id,
+    date: inv.date,
+    poNumber: inv.poNumber,
+    salesRepId: inv.salesRepId,
+    transactionType: inv.transactionType,
+    customerName: inv.customerName,
+    company: inv.company,
+    customerEmail: inv.customerEmail,
+    customerPhone: inv.customerPhone,
+    accountsPayableEmail: inv.accountsPayableEmail,
+    billToAddress: inv.billToAddress,
+    shipToAddress: inv.shipToAddress,
+    shippingCost: inv.shippingCost,
+    additionalInfo: inv.additionalInfo,
+    status: inv.status,
+    taxRate: inv.taxRate,
+  });
 
-    const items = invoiceData.items.map(item => ({
-      invoice_id: invoiceId,
-      mfg: item.mfg,
-      part_number: item.partNumber,
-      description: item.description,
-      qty: item.qty,
-      unit_price: item.unitPrice,
-      taxable: item.taxable,
-    }));
-    const { error: itemsError } = await supabase
-      .from('invoice_items_ff2024')
-      .insert(items);
-    if (itemsError) throw itemsError;
-
+  // Invoice + line items are saved in one database transaction; the server
+  // recomputes subtotal/tax/total from the items.
+  const saveInvoice = async (invoice) => {
+    const { data, error } = await supabase.rpc('save_invoice', {
+      p_invoice: toRpcPayload(invoice),
+      p_items: (invoice.items || []).map(item => ({
+        mfg: item.mfg,
+        partNumber: item.partNumber,
+        description: item.description,
+        qty: item.qty,
+        unitPrice: item.unitPrice,
+        taxable: item.taxable,
+      })),
+    });
+    if (error) throw error;
     await loadInvoices();
-    return { id: invoiceId, ...invoiceData };
+    return data;
+  };
+
+  const addInvoice = async (invoiceData) => {
+    const id = await saveInvoice({ ...invoiceData, id: undefined });
+    return { ...invoiceData, id };
   };
 
   const updateInvoice = async (id, updates) => {
-    const updateData = {};
-    if (updates.date !== undefined) updateData.date = updates.date;
-    if (updates.poNumber !== undefined) updateData.po_number = updates.poNumber;
-    if (updates.salesRep !== undefined) updateData.sales_rep = updates.salesRep;
-    if (updates.transactionType !== undefined) updateData.transaction_type = updates.transactionType;
-    if (updates.customerName !== undefined) updateData.customer_name = updates.customerName;
-    if (updates.company !== undefined) updateData.company = updates.company;
-    if (updates.customerEmail !== undefined) updateData.customer_email = updates.customerEmail;
-    if (updates.customerPhone !== undefined) updateData.customer_phone = updates.customerPhone;
-    if (updates.accountsPayableEmail !== undefined) updateData.accounts_payable_email = updates.accountsPayableEmail;
-    if (updates.billToAddress !== undefined) updateData.bill_to_address = updates.billToAddress;
-    if (updates.shipToAddress !== undefined) updateData.ship_to_address = updates.shipToAddress;
-    if (updates.shippingCost !== undefined) updateData.shipping_cost = updates.shippingCost;
-    if (updates.additionalInfo !== undefined) updateData.additional_info = updates.additionalInfo;
-    if (updates.status !== undefined) updateData.status = updates.status;
-    if (updates.taxRate !== undefined) updateData.tax_rate = updates.taxRate;
-    if (updates.subtotal !== undefined) updateData.subtotal = updates.subtotal;
-    if (updates.tax !== undefined) updateData.tax = updates.tax;
-    if (updates.grandTotal !== undefined) updateData.grand_total = updates.grandTotal;
-    if (updates.archived !== undefined) updateData.archived = updates.archived;
-
-    const { error: invoiceError } = await supabase
-      .from('invoices_ff2024')
-      .update(updateData)
-      .eq('id', id);
-    if (invoiceError) throw invoiceError;
-
     if (updates.items) {
-      await supabase.from('invoice_items_ff2024').delete().eq('invoice_id', id);
-      const items = updates.items.map(item => ({
-        invoice_id: id,
-        mfg: item.mfg,
-        part_number: item.partNumber,
-        description: item.description,
-        qty: item.qty,
-        unit_price: item.unitPrice,
-        taxable: item.taxable,
-      }));
-      const { error: itemsError } = await supabase
-        .from('invoice_items_ff2024')
-        .insert(items);
-      if (itemsError) throw itemsError;
+      const existing = invoices.find(inv => inv.id === id) || {};
+      await saveInvoice({ ...existing, ...updates, id });
+      return;
     }
+    // Field-only updates (archive toggle, status) don't touch line items.
+    const map = { status: 'status', archived: 'archived' };
+    const updateData = {};
+    Object.entries(map).forEach(([k, col]) => { if (updates[k] !== undefined) updateData[col] = updates[k]; });
+    const { error } = await supabase.from('invoices_ff2024').update(updateData).eq('id', id);
+    if (error) throw error;
     await loadInvoices();
   };
 
   const deleteInvoice = async (id) => {
-    const { error: itemsError } = await supabase
-      .from('invoice_items_ff2024')
-      .delete()
-      .eq('invoice_id', id);
-    if (itemsError) throw itemsError;
-
-    const { error } = await supabase
-      .from('invoices_ff2024')
-      .delete()
-      .eq('id', id);
+    const { error } = await supabase.rpc('delete_invoice', { p_id: id });
     if (error) throw error;
     setInvoices(prev => prev.filter(inv => inv.id !== id));
   };
@@ -434,7 +391,7 @@ export const DataProvider = ({ children }) => {
   };
 
   const value = {
-    invoices, customers, users, officeInfo, settings, loading,
+    invoices, customers, users, officeInfo, settings, loading, loadError,
     addInvoice, updateInvoice, deleteInvoice,
     addCustomer, updateCustomer, deleteCustomer,
     addUser, updateUser, deleteUser,

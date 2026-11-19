@@ -114,70 +114,21 @@ const BackupSystem = () => {
     }
   };
 
+  // Restore runs as a single database transaction (public.restore_backup):
+  // either everything is replaced or nothing changes. Accounts are never touched.
   const performDatabaseRestore = async (backupData) => {
     try {
-      setRestoreProgress({ status: 'processing', progress: 10, message: 'Starting restore process...' });
+      setRestoreProgress({ status: 'processing', progress: 30, message: 'Restoring (all-or-nothing)...' });
       if (!backupData.data || !backupData.version) throw new Error('Invalid backup file structure');
-
-      setRestoreProgress({ status: 'processing', progress: 20, message: 'Restoring customers...' });
-      if (backupData.data.customers?.length) {
-        await supabase.from('customers_ff2024').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-        for (const c of backupData.data.customers) {
-          await supabase.from('customers_ff2024').insert([{
-            id: c.id, name: c.name || '', company: c.company || '',
-            email: c.email || '', phone: c.phone || '',
-            bill_to_address: c.billToAddress || '', ship_to_address: c.shipToAddress || '',
-            accounts_payable_email: c.accountsPayableEmail || '',
-          }]);
-        }
-      }
-
-      setRestoreProgress({ status: 'processing', progress: 40, message: 'Restoring users...' });
-      // User accounts live in Supabase Auth; they are not restored from backups.
-
-      setRestoreProgress({ status: 'processing', progress: 60, message: 'Restoring invoices...' });
-      if (backupData.data.invoices?.length) {
-        await supabase.from('invoice_items_ff2024').delete().neq('invoice_id', '00000000-0000-0000-0000-000000000000');
-        await supabase.from('invoices_ff2024').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-        for (const inv of backupData.data.invoices) {
-          await supabase.from('invoices_ff2024').insert([{
-            id: inv.id, date: inv.date, po_number: inv.poNumber || '',
-            sales_rep: inv.salesRep || '', transaction_type: inv.transactionType || 'Sales Order',
-            customer_name: inv.customerName || '', company: inv.company || '',
-            customer_email: inv.customerEmail || '', customer_phone: inv.customerPhone || '',
-            accounts_payable_email: inv.accountsPayableEmail || '',
-            bill_to_address: inv.billToAddress || '', ship_to_address: inv.shipToAddress || '',
-            shipping_cost: inv.shippingCost || 0, additional_info: inv.additionalInfo || '',
-            status: inv.status || 'pending', tax_rate: inv.taxRate || 8.0,
-            subtotal: inv.subtotal || 0, tax: inv.tax || 0, grand_total: inv.grandTotal || 0,
-            archived: inv.archived || false,
-          }]);
-          if (inv.items?.length) {
-            for (const item of inv.items) {
-              await supabase.from('invoice_items_ff2024').insert([{
-                invoice_id: inv.id, mfg: item.mfg || '', part_number: item.partNumber || '',
-                description: item.description || '', qty: item.qty || 0,
-                unit_price: item.unitPrice || 0, taxable: item.taxable ?? true,
-              }]);
-            }
-          }
-        }
-      }
-
-      setRestoreProgress({ status: 'processing', progress: 80, message: 'Restoring settings...' });
-      if (backupData.data.settings?.taxRate !== undefined) {
-        await supabase.from('settings_ff2024').upsert(
-          [{ key: 'tax_rate', value: backupData.data.settings.taxRate.toString() }],
-          { onConflict: 'key' }
-        );
-      }
-
-      setRestoreProgress({ status: 'processing', progress: 95, message: 'Finalizing...' });
+      const { error } = await supabase.rpc('restore_backup', { p_backup: backupData });
+      if (error) throw error;
+      setRestoreProgress({ status: 'processing', progress: 90, message: 'Reloading data...' });
       await loadAllData();
       setRestoreProgress({ status: 'completed', progress: 100, message: 'Restore completed successfully!' });
       return true;
     } catch (error) {
-      setRestoreProgress({ status: 'error', progress: 0, message: 'Restore failed: ' + error.message });
+      console.error('Restore failed:', error);
+      setRestoreProgress({ status: 'error', progress: 0, message: 'Restore failed, nothing was changed: ' + error.message });
       return false;
     }
   };

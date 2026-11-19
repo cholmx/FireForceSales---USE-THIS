@@ -27,14 +27,21 @@ const CustomerManagement = () => {
       customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleSubmit = (e) => {
+  const [formError, setFormError] = useState('');
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (editingCustomer) {
-      updateCustomer(editingCustomer.id, formData);
-    } else {
-      addCustomer(formData);
+    setFormError('');
+    try {
+      if (editingCustomer) {
+        await updateCustomer(editingCustomer.id, formData);
+      } else {
+        await addCustomer(formData);
+      }
+      resetForm();
+    } catch (err) {
+      setFormError(err.message || 'Could not save the customer.');
     }
-    resetForm();
   };
 
   const resetForm = () => {
@@ -56,6 +63,9 @@ const CustomerManagement = () => {
 
   return (
     <div className="space-y-5">
+      {formError && (
+        <div role="alert" className="bg-red-50 text-red-600 text-xs p-3 rounded-lg border border-red-100">{formError}</div>
+      )}
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold text-gray-900 tracking-tight">Customers</h2>
         <button 

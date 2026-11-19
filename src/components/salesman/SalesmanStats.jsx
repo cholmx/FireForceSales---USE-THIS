@@ -15,7 +15,7 @@ const SalesmanStats = () => {
   const { invoices } = useData();
   const { user } = useAuth();
 
-  const myInvoices = invoices.filter(inv => inv.salesRep === user?.name);
+  const myInvoices = invoices.filter(inv => inv.salesRepId === user?.id);
   const totalInvoices = myInvoices.length;
   const pendingInvoices = myInvoices.filter(inv => inv.status === 'pending').length;
   const completedInvoices = myInvoices.filter(inv => inv.status === 'completed').length;

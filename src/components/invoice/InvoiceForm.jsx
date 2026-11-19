@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import InvoicePreview from './InvoicePreview';
 import CustomerSearch from './CustomerSearch';
 import SafeIcon from '../../common/SafeIcon';
+import { calculateTotals } from '../../utils/invoiceMath';
 import * as FiIcons from 'react-icons/fi';
 
 const { FiPlus, FiTrash2, FiSave, FiEye, FiArrowLeft } = FiIcons;
@@ -13,14 +14,17 @@ const { FiPlus, FiTrash2, FiSave, FiEye, FiArrowLeft } = FiIcons;
 const InvoiceForm = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  const { invoices, customers, addInvoice, updateInvoice, settings } = useData();
+  const { invoices, customers, users, addInvoice, updateInvoice, settings } = useData();
   const { user } = useAuth();
   const [showPreview, setShowPreview] = useState(false);
   const [isTaxExempt, setIsTaxExempt] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     poNumber: '',
     salesRep: user?.name || '',
+    salesRepId: user?.id,
     transactionType: 'Sales Order',
     customerName: '',
     company: '',
@@ -62,30 +66,32 @@ const InvoiceForm = () => {
       setFormData(prev => ({
         ...prev,
         taxRate: settings.taxRate,
-        salesRep: user?.name || ''
+        salesRep: user?.name || '',
+        salesRepId: user?.id
       }));
     }
   }, [id, invoices, settings.taxRate, user, customers]);
 
-  const calculateTotals = () => {
-    const subtotal = formData.items.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
-    const taxableSubtotal = formData.items.reduce((sum, item) => sum + (item.taxable ? item.qty * item.unitPrice : 0), 0);
-    const tax = taxableSubtotal * (formData.taxRate / 100);
-    const grandTotal = subtotal + tax + formData.shippingCost;
-    return { subtotal, tax, grandTotal };
-  };
+  const { subtotal, tax, grandTotal } = calculateTotals(formData.items, formData.taxRate, formData.shippingCost);
 
-  const { subtotal, tax, grandTotal } = calculateTotals();
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const invoiceData = { ...formData, subtotal, tax, grandTotal };
-    if (id) {
-      updateInvoice(id, invoiceData);
-    } else {
-      addInvoice(invoiceData);
+    if (saving) return;
+    setSaveError('');
+    setSaving(true);
+    try {
+      const invoiceData = { ...formData, subtotal, tax, grandTotal };
+      if (id) {
+        await updateInvoice(id, invoiceData);
+      } else {
+        await addInvoice(invoiceData);
+      }
+      navigate(user?.role === 'salesman' ? '/salesman/invoices' : '/office/invoices');
+    } catch (err) {
+      console.error('Save invoice failed:', err);
+      setSaveError(err.message || 'Could not save the invoice. Please try again.');
+      setSaving(false);
     }
-    navigate(user?.role === 'salesman' ? '/salesman/invoices' : '/office/invoices');
   };
 
   const addItem = () => {
@@ -171,20 +177,25 @@ const InvoiceForm = () => {
           </button>
           <button 
             onClick={handleSubmit} 
-            className="flex items-center space-x-2 px-4 py-1.5 bg-brand-gradient hover:bg-brand-gradient-hover text-white rounded-lg shadow-sm hover:shadow text-xs font-semibold transition-all"
+            disabled={saving}
+            className="flex items-center space-x-2 px-4 py-1.5 bg-brand-gradient hover:bg-brand-gradient-hover text-white rounded-lg shadow-sm hover:shadow text-xs font-semibold transition-all disabled:opacity-60"
           >
             <SafeIcon icon={FiSave} />
-            <span>Save Invoice</span>
+            <span>{saving ? 'Saving...' : 'Save Invoice'}</span>
           </button>
         </div>
       </div>
+
+      {saveError && (
+        <div role="alert" className="bg-red-50 text-red-600 text-xs p-3 rounded-lg border border-red-100">{saveError}</div>
+      )}
 
       <motion.div 
         initial={{ opacity: 0, y: 10 }} 
         animate={{ opacity: 1, y: 0 }} 
         className="bg-white rounded-xl shadow-sm border border-gray-200"
       >
-        <form className="p-5 md:p-8 space-y-8">
+        <form className="p-5 md:p-8 space-y-8" onSubmit={handleSubmit}>
           {/* Header Info */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
@@ -209,13 +220,26 @@ const InvoiceForm = () => {
             </div>
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Sales Rep</label>
-              <input 
-                type="text" 
-                value={user?.role === 'office' ? formData.salesRep : (user?.name || '')}
-                onChange={(e) => user?.role === 'office' && setFormData(prev => ({ ...prev, salesRep: e.target.value }))}
-                disabled={user?.role !== 'office'}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-1 focus:ring-red-500 focus:border-red-500 transition-colors disabled:opacity-60"
-              />
+              {user?.role === 'office' ? (
+                <select
+                  value={formData.salesRepId || ''}
+                  onChange={(e) => {
+                    const rep = users.find(u => u.id === e.target.value);
+                    setFormData(prev => ({ ...prev, salesRepId: e.target.value, salesRep: rep?.name || prev.salesRep }));
+                  }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-1 focus:ring-red-500 focus:border-red-500 transition-colors"
+                >
+                  {!formData.salesRepId && <option value="">{formData.salesRep || 'Select rep'}</option>}
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={user?.name || ''}
+                  disabled
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 disabled:opacity-60"
+                />
+              )}
             </div>
             <div className="md:col-span-1">
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Type</label>
