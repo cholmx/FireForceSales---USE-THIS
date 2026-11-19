@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
+  // config change triggers a dev-server restart so .env is re-read
+
   plugins: [react()],
   resolve: {
     alias: {
