@@ -1,15 +1,5 @@
--- Minimal stand-ins for Supabase so the migrations can run on plain Postgres (CI / local).
-CREATE SCHEMA IF NOT EXISTS auth;
+-- Stand-ins for objects the real project created outside the migrations folder.
 CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text);
-CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS
-$$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN; END IF;
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
-END $$;
-GRANT USAGE ON SCHEMA public, auth TO anon, authenticated;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
-
 -- Pre-existing app tables (the real project created these outside the migrations folder)
 CREATE TABLE users_ff2024 (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), username text UNIQUE, name text, email text, phone text,
   role text, password_hash text NOT NULL, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now());

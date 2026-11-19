@@ -68,9 +68,37 @@ Then apply the migrations. Never put the service-role key in the browser or in `
 | `npm test` | Unit tests (Vitest) |
 | `npm run test:db` | Applies all migrations to a throwaway Postgres and runs RLS/RPC tests (`PGHOST`/`PGUSER` must point at a superuser connection) |
 
-CI (`.github/workflows/ci.yml`) runs lint, unit tests, build, and the database tests.
+CI (`.github/workflows/ci.yml`) runs lint, unit tests, build, the database tests, and a backup/restore round trip.
 
 ## Backups
 
-Office → Backup exports JSON (no passwords). Restore replaces customers, invoices and the tax rate in a single
-transaction (all-or-nothing) and never touches user accounts; manage those under Users.
+**In-app (Office → Backup):** exports JSON (no passwords). Restore replaces customers, invoices and the tax rate in a
+single transaction (all-or-nothing) and never touches user accounts; manage those under Users. Handy for quick
+exports, but it isn't a disaster-recovery plan, because someone has to remember to do it.
+
+### Server-side backups (automatic)
+
+`.github/workflows/backup.yml` runs nightly (07:17 UTC, and on demand from the Actions tab). It dumps the app schema +
+data and the Supabase Auth accounts with `pg_dump`, encrypts the bundle (AES-256), **restores it into a scratch
+Postgres to prove it works**, and keeps the encrypted file as a workflow artifact for 90 days. If any step fails,
+the run fails and GitHub emails you.
+
+One-time setup, in GitHub → Settings → Secrets and variables → Actions:
+
+| Secret | Value |
+| --- | --- |
+| `SUPABASE_DB_URL` | Postgres connection string. GitHub runners are IPv4-only, so use the **session pooler** URL from Supabase → Project Settings → Database → Connection string (`...pooler.supabase.com:5432`), not the direct host. Use the `postgres` user. |
+| `BACKUP_PASSPHRASE` | A long random passphrase. **Also store it in your password manager**: without it backups can't be read. |
+
+Then run the workflow once by hand (Actions → Nightly database backup → Run workflow) and confirm it's green.
+
+Good to know:
+- Backups contain customer data and account password hashes, which is why they're encrypted. Treat the passphrase and the
+  `SUPABASE_DB_URL` secret as sensitive.
+- GitHub disables scheduled workflows after 60 days without repository activity. A green run every so often (or any
+  commit) keeps it alive; check the Actions tab if you haven't touched the repo in a while.
+- Artifacts expire after 90 days. For longer retention, download a monthly one and keep it elsewhere. If you're on a
+  paid Supabase plan, also enable its built-in daily backups / point-in-time recovery; they complement this.
+- To restore, follow [`docs/RESTORE.md`](docs/RESTORE.md).
+- Run by hand: `DATABASE_URL=... BACKUP_PASSPHRASE=... bash scripts/backup-db.sh` then
+  `bash scripts/verify-backup.sh <file>` (needs a scratch Postgres superuser connection in `PG*` env vars).

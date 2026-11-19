@@ -1,0 +1,64 @@
+name: Nightly database backup
+
+on:
+  schedule:
+    - cron: '17 7 * * *'     # daily, 07:17 UTC
+  workflow_dispatch:          # run it by hand from the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      scratch:                # throwaway server used ONLY to prove the backup restores
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: scratch
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          [ -n "$SUPABASE_DB_URL" ] || { echo "::error::Repository secret SUPABASE_DB_URL is not set (see README, 'Server-side backups')"; exit 1; }
+          [ -n "$BACKUP_PASSPHRASE" ] || { echo "::error::Repository secret BACKUP_PASSPHRASE is not set"; exit 1; }
+
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
+          pg_dump --version
+
+      - name: Dump and encrypt
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: bash scripts/backup-db.sh out
+
+      - name: Verify the backup restores
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: scratch
+        run: bash scripts/verify-backup.sh out/*.tgz.enc
+
+      - name: Keep the encrypted backup (90 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: fireforce-db-backup-${{ github.run_id }}
+          path: out/*.tgz.enc
+          retention-days: 90
+          if-no-files-found: error
