@@ -19,8 +19,7 @@ export const useBackupSystem = () => {
     emergencyPhone: '724-586-6577',
     email: 'Lizfireforce@yahoo.com',
     serviceEmail: 'fireforcebutler@gmail.com',
-    username: 'ffoffice1',
-    password: 'ffpassword' // This is for reference only, never expose in backup
+    username: 'ffoffice1'
   };
 
   // Create a comprehensive backup
@@ -78,7 +77,7 @@ export const useBackupSystem = () => {
             email: user.email || '',
             phone: user.phone || '',
             role: user.role,
-            password: includePasswords ? user.password : '***ENCRYPTED***',
+            password: '***ENCRYPTED***',
             createdAt: user.createdAt,
             updatedAt: user.updatedAt
           })),
@@ -208,31 +207,8 @@ export const useBackupSystem = () => {
       
       setRestoreProgress({ status: 'processing', progress: 40, message: 'Restoring users...' });
       
-      // Clear and restore users (except for the office account)
-      if (backupData.data.users && Array.isArray(backupData.data.users)) {
-        // Delete existing users (only salesmen, not office)
-        await supabase.from('users_ff2024').delete().eq('role', 'salesman');
-        
-        // Insert new users
-        for (const user of backupData.data.users) {
-          // Skip office users - we don't want to modify them
-          if (user.role === 'office') continue;
-          
-          const formattedUser = {
-            id: user.id,
-            username: user.username,
-            name: user.name,
-            email: user.email || '',
-            phone: user.phone || '',
-            role: user.role,
-            password_hash: 'default123', // Use a default password, admin can reset later
-            created_at: user.createdAt || new Date().toISOString(),
-            updated_at: user.updatedAt || new Date().toISOString()
-          };
-          
-          await supabase.from('users_ff2024').insert([formattedUser]);
-        }
-      }
+      // User accounts live in Supabase Auth and are not restored from backups;
+      // manage them in User Management.
       
       setRestoreProgress({ status: 'processing', progress: 60, message: 'Restoring invoices...' });
       

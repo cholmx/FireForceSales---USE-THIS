@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import supabase from '../lib/supabase';
+import { usernameToEmail } from '../lib/authEmail';
 
 const AuthContext = createContext();
 
@@ -15,80 +16,54 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const loadProfile = async (authUser) => {
+    if (!authUser) { setUser(null); return null; }
+    const { data, error } = await supabase
+      .from('users_ff2024')
+      .select('id, username, name, role')
+      .eq('auth_id', authUser.id)
+      .maybeSingle();
+    if (error || !data) { setUser(null); return null; }
+    setUser(data);
+    return data;
+  };
+
   useEffect(() => {
-    // Check for existing session
-    const savedUser = localStorage.getItem('fireforce_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
+    let active = true;
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (active) await loadProfile(data.session?.user ?? null);
+      if (active) setLoading(false);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') setUser(null);
+      // defer to avoid deadlocking inside the auth callback
+      else if (event === 'SIGNED_IN') setTimeout(() => active && loadProfile(session?.user ?? null), 0);
+    });
+    return () => { active = false; sub.subscription.unsubscribe(); };
   }, []);
 
   const login = async (username, password) => {
     try {
-      // IT override account check
-      if (username === 'cholmx' && password === '?74Beverlydrive') {
-        const userData = {
-          id: 'it_admin',
-          username: 'cholmx',
-          name: 'IT Administrator',
-          role: 'office' // Give IT admin access to office dashboard
-        };
-        setUser(userData);
-        localStorage.setItem('fireforce_user', JSON.stringify(userData));
-        return { success: true };
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: usernameToEmail(username),
+        password,
+      });
+      if (error) return { success: false, error: 'Invalid credentials' };
+      const profile = await loadProfile(data.user);
+      if (!profile) {
+        await supabase.auth.signOut();
+        return { success: false, error: 'Account is not set up. Contact the office.' };
       }
-
-      // Fixed office user credentials
-      if (username === 'ffoffice1' && password === 'ffpassword') {
-        const userData = {
-          id: 'office1',
-          username: 'ffoffice1',
-          name: 'Office Administrator',
-          role: 'office'
-        };
-        setUser(userData);
-        localStorage.setItem('fireforce_user', JSON.stringify(userData));
-        return { success: true };
-      }
-
-      // Check salesmen users
-      const { data: users, error: usersError } = await supabase
-        .from('users_ff2024')
-        .select('*')
-        .eq('username', username)
-        .eq('role', 'salesman');
-
-      if (usersError) {
-        console.error('Database error:', usersError);
-        return { success: false, error: 'Database connection error' };
-      }
-
-      if (users && users.length > 0) {
-        const user = users[0];
-        if (user.password_hash === password) {
-          const userData = {
-            id: user.id,
-            username: user.username,
-            name: user.name,
-            role: user.role
-          };
-          setUser(userData);
-          localStorage.setItem('fireforce_user', JSON.stringify(userData));
-          return { success: true };
-        }
-      }
-
-      return { success: false, error: 'Invalid credentials' };
+      return { success: true };
     } catch (error) {
       console.error('Login error:', error);
       return { success: false, error: 'Connection error' };
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('fireforce_user');
   };
 
   const value = {

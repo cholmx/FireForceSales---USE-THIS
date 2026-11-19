@@ -133,17 +133,7 @@ const BackupSystem = () => {
       }
 
       setRestoreProgress({ status: 'processing', progress: 40, message: 'Restoring users...' });
-      if (backupData.data.users?.length) {
-        await supabase.from('users_ff2024').delete().eq('role', 'salesman');
-        for (const u of backupData.data.users) {
-          if (u.role === 'office') continue;
-          await supabase.from('users_ff2024').insert([{
-            id: u.id, username: u.username, name: u.name,
-            email: u.email || '', phone: u.phone || '',
-            role: u.role, password_hash: 'default123',
-          }]);
-        }
-      }
+      // User accounts live in Supabase Auth; they are not restored from backups.
 
       setRestoreProgress({ status: 'processing', progress: 60, message: 'Restoring invoices...' });
       if (backupData.data.invoices?.length) {

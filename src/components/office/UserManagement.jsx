@@ -28,21 +28,23 @@ const UserManagement = () => {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleSalesmanSubmit = (e) => {
+  const handleSalesmanSubmit = async (e) => {
     e.preventDefault();
-    
-    if (salesmanForm.password !== salesmanForm.confirmPassword) {
-      showNotification('Passwords do not match', 'error');
-      return;
-    }
 
-    if (salesmanForm.password.length < 6) {
-      showNotification('Password must be at least 6 characters', 'error');
-      return;
+    const passwordChanging = !editingUser || salesmanForm.password;
+    if (passwordChanging) {
+      if (salesmanForm.password !== salesmanForm.confirmPassword) {
+        showNotification('Passwords do not match', 'error');
+        return;
+      }
+      if (salesmanForm.password.length < 8) {
+        showNotification('Password must be at least 8 characters', 'error');
+        return;
+      }
     }
 
     // Check if username already exists
-    if (!editingUser && users.some(user => user.username === salesmanForm.username)) {
+    if (!editingUser && users.some(user => user.username === salesmanForm.username.trim().toLowerCase())) {
       showNotification('Username already exists', 'error');
       return;
     }
@@ -56,14 +58,18 @@ const UserManagement = () => {
       password: salesmanForm.password
     };
 
-    if (editingUser) {
-      updateUser(editingUser.id, userData);
-      showNotification('Sales user updated successfully', 'success');
-    } else {
-      addUser(userData);
-      showNotification('Sales user added successfully', 'success');
+    try {
+      if (editingUser) {
+        await updateUser(editingUser.id, userData);
+        showNotification('Sales user updated successfully', 'success');
+      } else {
+        await addUser(userData);
+        showNotification('Sales user added successfully', 'success');
+      }
+      resetSalesmanForm();
+    } catch (err) {
+      showNotification(err.message || 'Failed to save user', 'error');
     }
-    resetSalesmanForm();
   };
 
   const resetSalesmanForm = () => {

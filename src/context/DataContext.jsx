@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import supabase from '../lib/supabase';
+import { useAuth } from './AuthContext';
 
 const DataContext = createContext();
 
@@ -18,9 +19,17 @@ export const DataProvider = ({ children }) => {
   const [settings, setSettings] = useState({ taxRate: 8.0 });
   const [loading, setLoading] = useState(true);
 
+  const { user: authUser } = useAuth();
+
   useEffect(() => {
-    loadAllData();
-  }, []);
+    if (authUser) {
+      loadAllData();
+    } else {
+      setInvoices([]); setCustomers([]); setUsers([]); setOfficeInfo({});
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser?.id]);
 
   const loadAllData = async () => {
     try {
@@ -113,15 +122,11 @@ export const DataProvider = ({ children }) => {
   const loadUsers = async () => {
     const { data, error } = await supabase
       .from('users_ff2024')
-      .select('*')
+      .select('id, username, name, email, phone, role, created_at, updated_at')
       .order('name');
     if (error) throw error;
-    const formatted = data.map(user => ({
-      ...user,
-      password: user.password_hash,
-    }));
-    setUsers(formatted);
-    return formatted;
+    setUsers(data);
+    return data;
   };
 
   const loadOfficeInfo = async () => {
@@ -139,8 +144,6 @@ export const DataProvider = ({ children }) => {
         emergencyPhone: data.emergency_phone,
         email: data.email,
         serviceEmail: data.service_email,
-        password: data.password_hash,
-        username: data.username || 'office1',
       };
       setOfficeInfo(formatted);
       return formatted;
@@ -328,45 +331,44 @@ export const DataProvider = ({ children }) => {
 
   // ─── User Operations ──────────────────────────────────────────────────────
 
-  const addUser = async (userData) => {
-    const { data, error } = await supabase
-      .from('users_ff2024')
-      .insert([{
-        username: userData.username,
-        name: userData.name,
-        email: userData.email,
-        phone: userData.phone,
-        role: userData.role,
-        password_hash: userData.password,
-      }])
-      .select()
-      .single();
-    if (error) throw error;
-    await loadUsers();
+  const callManageUsers = async (payload) => {
+    const { data, error } = await supabase.functions.invoke('manage-users', { body: payload });
+    if (error) {
+      let msg = error.message;
+      try { msg = (await error.context.json()).error || msg; } catch { /* keep default */ }
+      throw new Error(msg);
+    }
+    if (data?.error) throw new Error(data.error);
     return data;
   };
 
+  const addUser = async (userData) => {
+    const data = await callManageUsers({
+      action: 'create',
+      username: userData.username,
+      name: userData.name,
+      email: userData.email,
+      phone: userData.phone,
+      password: userData.password,
+    });
+    await loadUsers();
+    return data.user;
+  };
+
   const updateUser = async (id, updates) => {
-    const updateData = {
+    await callManageUsers({
+      action: 'update',
+      id,
       name: updates.name,
       email: updates.email,
       phone: updates.phone,
-    };
-    if (updates.password) updateData.password_hash = updates.password;
-    const { error } = await supabase
-      .from('users_ff2024')
-      .update(updateData)
-      .eq('id', id);
-    if (error) throw error;
+      password: updates.password || undefined,
+    });
     await loadUsers();
   };
 
   const deleteUser = async (id) => {
-    const { error } = await supabase
-      .from('users_ff2024')
-      .delete()
-      .eq('id', id);
-    if (error) throw error;
+    await callManageUsers({ action: 'delete', id });
     await loadUsers();
   };
 
@@ -399,9 +401,7 @@ export const DataProvider = ({ children }) => {
       emergency_phone: updates.emergencyPhone,
       email: updates.email,
       service_email: updates.serviceEmail,
-      username: updates.username,
     };
-    if (updates.password) updateData.password_hash = updates.password;
 
     const { data: checkData, error: checkError } = await supabase
       .from('office_info_ff2024')
@@ -429,8 +429,6 @@ export const DataProvider = ({ children }) => {
       emergencyPhone: updates.emergencyPhone,
       email: updates.email,
       serviceEmail: updates.serviceEmail,
-      username: updates.username,
-      password: updates.password || officeInfo.password,
     });
     await loadOfficeInfo();
   };
