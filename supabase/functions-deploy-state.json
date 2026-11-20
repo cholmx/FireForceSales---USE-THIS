@@ -1,6 +1,10 @@
 {
   "projectId": "73062528",
   "functions": {
+    "bids-daily": {
+      "hasChanged": false,
+      "hash": "e9963d2df8edcada05ba7f832e7bd9f3136a7cdc7723ee7fe8b9c7a8beaf6c9b"
+    },
     "manage-users": {
       "hasChanged": false,
       "hash": "e0e0e5e27cf73f974dcb07849c1c9084b92b345533a5a0dd394f526046c47053"
