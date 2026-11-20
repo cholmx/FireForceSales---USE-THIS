@@ -131,9 +131,47 @@ One-time setup:
    and `APP_URL` (the app's address, used for links in the email).
 4. Run the workflow once by hand (Actions -> Daily bid check -> Run workflow) and check the result.
 
-What this does **not** do on its own: go out and find bids. It posts and emails whatever arrives by hand, through the feed, or from
-a tool pushing leads in. Searching newspapers, state portals and township sites is a separate piece that would feed the
-`ingest` action above.
+### Finding bids automatically
+
+Every morning, before the digest, the `bids-find` Edge Function looks for new bids from four places and posts them to the board.
+Office staff manage them in **Bids -> Sources**. Each source simply does nothing until it is set up, and one failing never stops the others.
+
+| Source | What it does | You provide |
+| --- | --- | --- |
+| **Paste a notice** | *Add / Import -> Paste a notice (AI)*: Claude reads a pasted notice or email and adds any open fire-equipment bid. Works for everyone. | `ANTHROPIC_API_KEY` |
+| **Public pages** | Reads the township / city / fire-district bid pages you list, once a day, **only when the page changed** (and respects robots.txt). Claude pulls out any open bids and the document links. | the page addresses (Sources screen) + `ANTHROPIC_API_KEY` |
+| **SAM.gov** | New federal notices with a place of performance in OH, PA or WV that mention fire equipment. Few local departments post here. | a free SAM.gov API key as `SAM_API_KEY` |
+| **Alert emails** | Alerts from BidNet, state portals and newspaper notice sites are received at an address you set up, queued, and read by Claude the next morning. | inbound email setup (below) + `ANTHROPIC_API_KEY` |
+
+What Claude is and isn't allowed to do: text from pages and emails is treated as untrusted data. Claude only gets a "record bids" form (no
+other tools), and everything it returns is checked before saving: bids must be *open* (awards and news are dropped), fire-equipment related,
+with a real state, a valid date, and web-only links. Duplicates merge with what is already on the board. Claude can still misread a notice,
+so look over what lands on the board.
+
+**Costs and limits.** Pages are only read by Claude when they changed, and emails only when they mention fire-equipment words. There is a hard
+cap of 150 AI reads a day (`BIDS_AI_DAILY_CAP` to change it) and 40 per run; anything over waits for the next day. The model defaults to
+`claude-haiku-5-5` (`ANTHROPIC_MODEL` to change it).
+
+Setup:
+
+1. Deploy the **`bids-find`** and **`bids-inbound`** Edge Functions. `bids-inbound` must be deployed with *JWT verification off* (an email provider
+   can't send a Supabase login; `supabase/config.toml` already says so, so check Bolt/Supabase did not turn it back on).
+2. Add function secrets: `ANTHROPIC_API_KEY`, `SAM_API_KEY` (optional), and, for the same cron job as the digest, `BIDS_CRON_SECRET`.
+3. **SAM.gov key:** sign in at sam.gov, open *Account Details* and request a public API key. SAM.gov limits requests per day by account type and
+   does not publish the numbers, so the app uses as few as it can (usually one a day) and backs off on a rate-limit reply.
+4. **Pages:** Bids -> Sources -> add each page (name, address, state, county). Use the page that *lists* the bids. Pages that need JavaScript
+   to show anything, and addresses that are only a PDF, can't be read yet; the Sources screen says so for each page.
+5. **Alert emails:** pick an address on your domain (for example `bids@fforcesales.com`), subscribe the alert services to it (or forward
+   to it), then put the addresses you expect mail from in *Allowed senders* (`bidnet.com, you@example.com`). **Nothing is accepted until you list senders.**
+   The inbound receiver supports:
+   - **Resend inbound:** add the receiving DNS record Resend asks for, create a webhook for the `email.received` event pointing at
+     `https://<your-project>.supabase.co/functions/v1/bids-inbound`, and save its signing secret as `RESEND_WEBHOOK_SECRET`.
+   - **Anything else** (Postmark, a forwarding script, Zapier): POST the email as JSON `{from, subject, text}` (or Postmark's format) to the same
+     address with the header `x-inbound-secret: <INBOUND_EMAIL_SECRET>`.
+6. The scheduled workflow (`.github/workflows/bids-daily.yml`) now runs *find, then digest*. Run it once from the Actions tab and read the results.
+
+Not covered: scraping paid portals (BidNet, OhioBuys and similar generally forbid it; use their alert emails instead), and PDFs or pages that only
+render with JavaScript.
 
 ## Invoice numbers & audit trail
 

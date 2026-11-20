@@ -90,7 +90,7 @@ DO $$ BEGIN
 EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok - leads can only be added through the import function'; END $$;
 UPDATE bid_settings SET value = 'https://evil.example/feed.json' WHERE key = 'feed_url';
 SELECT pg_temp.assert((SELECT value FROM bid_settings WHERE key = 'feed_url') = '/data/fire_equipment_leads.json', 'sales cannot change feed settings');
-SELECT pg_temp.assert((SELECT count(*) FROM bid_settings) = 2, 'sales can read settings');
+SELECT pg_temp.assert((SELECT count(*) FROM bid_settings WHERE key IN ('feed_url', 'digest_enabled')) = 2, 'sales can read settings');
 SELECT pg_temp.assert((SELECT count(*) FROM bid_digests) = 0, 'sales cannot see the digest log');
 
 -- ── Office Admin / Main Admin ───────────────────────────────────────────────
@@ -125,3 +125,51 @@ SELECT pg_temp.assert((import_bid_leads('[{"agency_name":"Feed FD","state":"PA",
 RESET ROLE;
 SELECT set_config('request.jwt.claim.role', '', false);
 \echo BID TRACKER TESTS PASSED
+
+-- ── Bid finder tables ───────────────────────────────────────────────────────
+RESET ROLE;
+INSERT INTO bid_watch_pages (name, url, state, county) VALUES ('Stark Twp', 'https://stark-twp.example/bids', 'OH', 'Stark');
+INSERT INTO bid_inbox (message_id, sender, subject, body) VALUES ('<m1>', 'alerts@bidnet.example', 'New bids', 'secret body text');
+INSERT INTO bid_ai_usage (day, calls) VALUES (current_date, 3);
+
+SELECT pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');   -- Sales
+SELECT pg_temp.assert((SELECT count(*) FROM bid_watch_pages) = 1, 'sales can see the watched pages');
+DO $$ BEGIN
+  INSERT INTO bid_watch_pages (name, url) VALUES ('Mine', 'https://x.example'); RAISE EXCEPTION 'FAILED: sales added a page';
+EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok - sales cannot add watched pages'; END $$;
+UPDATE bid_watch_pages SET active = false;
+SELECT pg_temp.assert((SELECT active FROM bid_watch_pages), 'sales cannot pause watched pages');
+SELECT pg_temp.assert((SELECT count(*) FROM bid_inbox) = 0, 'sales see nothing in the inbox log');
+DO $$ BEGIN
+  PERFORM count(*) FROM bid_ai_usage; RAISE EXCEPTION 'FAILED: sales read ai usage';
+EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok - sales cannot read AI usage'; END $$;
+
+SELECT pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');   -- Office Admin
+INSERT INTO bid_watch_pages (name, url, state) VALUES ('Beaver Co', 'https://beaver.example/rfp', 'PA');
+SELECT pg_temp.assert((SELECT count(*) FROM bid_watch_pages) = 2, 'office admin can add watched pages');
+UPDATE bid_watch_pages SET active = false WHERE name = 'Beaver Co';
+SELECT pg_temp.assert(NOT (SELECT active FROM bid_watch_pages WHERE name = 'Beaver Co'), 'office admin can pause a page');
+DO $$ BEGIN
+  INSERT INTO bid_watch_pages (name, url) VALUES ('Dup', 'https://beaver.example/rfp'); RAISE EXCEPTION 'FAILED: duplicate url accepted';
+EXCEPTION WHEN unique_violation THEN RAISE NOTICE 'ok - the same page cannot be watched twice'; END $$;
+DO $$ BEGIN
+  INSERT INTO bid_watch_pages (name, url) VALUES ('Bad', 'javascript:alert(1)'); RAISE EXCEPTION 'FAILED: non-web url accepted';
+EXCEPTION WHEN check_violation THEN RAISE NOTICE 'ok - only web addresses can be watched'; END $$;
+DO $$ BEGIN
+  INSERT INTO bid_watch_pages (name, url, state) VALUES ('Far', 'https://far.example', 'MI'); RAISE EXCEPTION 'FAILED: out-of-area state accepted';
+EXCEPTION WHEN check_violation THEN RAISE NOTICE 'ok - watched pages must be in OH, PA or WV'; END $$;
+SELECT pg_temp.assert((SELECT count(*) FROM bid_inbox) = 1, 'office admin can see the inbox log');
+DO $$ BEGIN
+  PERFORM body FROM bid_inbox; RAISE EXCEPTION 'FAILED: office read an email body';
+EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok - email bodies are never readable from the app'; END $$;
+DO $$ BEGIN
+  INSERT INTO bid_inbox (message_id, subject) VALUES ('<fake>', 'x'); RAISE EXCEPTION 'FAILED: office forged an inbox row';
+EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok - the inbox can only be written by the server'; END $$;
+
+SELECT pg_temp.as_user(NULL);
+DO $$ BEGIN
+  PERFORM count(*) FROM bid_watch_pages; RAISE EXCEPTION 'FAILED: anon read pages';
+EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok - anonymous visitors cannot read watched pages'; END $$;
+
+RESET ROLE;
+\echo BID FINDER TABLE TESTS PASSED

@@ -9,10 +9,12 @@ const describe = (r) =>
   `${r.inserted} added, ${r.merged} merged into existing bids${r.skipped ? `, ${r.skipped} skipped` : ''}.` +
   (r.errors?.length ? ` ${r.errors.slice(0, 3).map((e) => `#${e.index}: ${e.error}`).join(' · ')}` : '');
 
-const AddBidModal = ({ isOffice, onImport, onLoadSamples, onRemoveSamples, onClose }) => {
+const AddBidModal = ({ isOffice, onImport, onExtract, onLoadSamples, onRemoveSamples, onClose }) => {
   const [tab, setTab] = useState('form');
   const [form, setForm] = useState(EMPTY);
   const [json, setJson] = useState('');
+  const [notice, setNotice] = useState({ text: '', sourceName: '', sourceUrl: '' });
+  const [found, setFound] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null); // { ok, text }
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
@@ -35,6 +37,15 @@ const AddBidModal = ({ isOffice, onImport, onLoadSamples, onRemoveSamples, onClo
     try { leads = parseLeadsJson(json); } catch (err) { return setMessage({ ok: false, text: err.message }); }
     return run(() => onImport(leads), describe);
   };
+  const submitNotice = async (e) => {
+    e.preventDefault();
+    setFound(null);
+    const r = await run(() => onExtract({ text: notice.text, sourceName: notice.sourceName.trim() || undefined, sourceUrl: notice.sourceUrl.trim() || undefined }),
+      (res) => (res.found === 0
+        ? `Claude didn't find an open fire-equipment bid in that text${res.ignored ? ` (${res.ignored} item${res.ignored === 1 ? '' : 's'} ignored: awards or unrelated notices)` : ''}.`
+        : `Found ${res.found} bid${res.found === 1 ? '' : 's'}: ${res.import?.inserted ?? 0} added, ${res.import?.merged ?? 0} merged into existing bids${res.ignored ? `, ${res.ignored} ignored` : ''}.`));
+    if (r?.leads?.length) { setFound(r.leads); setNotice({ text: '', sourceName: '', sourceUrl: '' }); }
+  };
   const readFile = async (e) => {
     const file = e.target.files?.[0];
     if (file) setJson(await file.text());
@@ -53,7 +64,7 @@ const AddBidModal = ({ isOffice, onImport, onLoadSamples, onRemoveSamples, onClo
           <h3 className="text-lg font-bold text-gray-900">Add or import bids</h3>
           <button onClick={onClose} aria-label="Close" className="text-gray-500 hover:text-gray-900 text-xl px-2">×</button>
         </div>
-        <div className="px-6 flex border-b border-gray-200 mt-2">{tabBtn('form', 'Enter a bid')}{tabBtn('json', 'Paste or upload JSON')}{tabBtn('sample', 'Sample data')}</div>
+        <div className="px-6 flex border-b border-gray-200 mt-2">{tabBtn('form', 'Enter a bid')}{tabBtn('notice', 'Paste a notice (AI)')}{tabBtn('json', 'Paste or upload JSON')}{tabBtn('sample', 'Sample data')}</div>
 
         <div className="px-6 py-5">
           {message && (
@@ -80,6 +91,26 @@ const AddBidModal = ({ isOffice, onImport, onLoadSamples, onRemoveSamples, onClo
                 <button type="submit" disabled={busy} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold disabled:opacity-60">{busy ? 'Adding…' : 'Add bid'}</button>
               </div>
               <p className="col-span-2 text-xs text-gray-500">If this bid is already on the board (same solicitation number, or same agency with a nearby due date), it is merged into the existing one instead of added twice.</p>
+            </form>
+          )}
+
+          {tab === 'notice' && (
+            <form onSubmit={submitNotice} className="space-y-3">
+              <p className="text-xs text-gray-600">Paste a legal notice, an email or part of a web page. Claude reads it and adds any open fire-equipment bid it finds (agency, county, due date, equipment). Awards and unrelated notices are ignored. Check the result on the board afterwards, since AI can misread a notice.</p>
+              <textarea value={notice.text} onChange={(e) => setNotice((n) => ({ ...n, text: e.target.value }))} rows={9} aria-label="Notice text" className={input} placeholder="Paste the notice here…" />
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={label} htmlFor="n-name">Where it came from</label><input id="n-name" className={input} value={notice.sourceName} onChange={(e) => setNotice((n) => ({ ...n, sourceName: e.target.value }))} placeholder="Morning Journal, BidNet…" /></div>
+                <div><label className={label} htmlFor="n-url">Link (optional)</label><input id="n-url" type="url" className={input} value={notice.sourceUrl} onChange={(e) => setNotice((n) => ({ ...n, sourceUrl: e.target.value }))} placeholder="https://" /></div>
+              </div>
+              {found && (
+                <ul className="text-xs text-gray-700 space-y-1 border border-gray-200 rounded-lg p-3 bg-gray-50">
+                  {found.map((l, i) => <li key={i}><strong>{l.agency_name}</strong> ({[l.county && `${l.county} Co.`, l.state].filter(Boolean).join(', ')}) · due {l.due_date || 'not stated'} · {(l.items ?? []).map((x) => x.item_name).slice(0, 3).join(', ') || 'no items listed'}</li>)}
+                </ul>
+              )}
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold">Close</button>
+                <button type="submit" disabled={busy || notice.text.trim().length < 20} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold disabled:opacity-60">{busy ? 'Reading…' : 'Read this notice'}</button>
+              </div>
             </form>
           )}
 

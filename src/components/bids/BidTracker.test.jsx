@@ -24,7 +24,16 @@ const makeBids = (leads, over = {}) => ({
   countyKeys: countySet([{ state: 'OH', county: 'Stark' }, { state: 'OH', county: 'Columbiana' }, { state: 'PA', county: 'Erie' }]),
   settings: { feed_url: '/data/fire_equipment_leads.json', digest_enabled: 'true' }, loading: false, error: '', feedStatus: { state: 'idle', message: '' }, lastUpdated: 0,
   reload: vi.fn(), importLeads: vi.fn(), loadSamples: vi.fn().mockResolvedValue({}), updateLead: vi.fn().mockResolvedValue(), deleteLeads: vi.fn().mockResolvedValue(1),
-  saveSettings: vi.fn().mockResolvedValue(), refreshFeed: vi.fn().mockResolvedValue({ feed: { ok: true, inserted: 2, merged: 1 } }), runDaily: vi.fn(), ...over,
+  saveSettings: vi.fn().mockResolvedValue(),
+  extractText: vi.fn(), getFinderStatus: vi.fn().mockResolvedValue({ ai: true, sam: false, aiUsedToday: 3, aiDailyCap: 150, watchedPages: 1, queuedEmails: 2 }),
+  runDiscovery: vi.fn().mockResolvedValue({ report: { sam: { skipped: true, reason: 'No SAM_API_KEY secret is set.' }, pages: { checked: 1, found: 2, inserted: 1, problems: 0 }, email: { processed: 1, found: 0 } } }),
+  checkPage: vi.fn().mockResolvedValue({ pages: { found: 1 } }), addPage: vi.fn().mockResolvedValue(), updatePage: vi.fn().mockResolvedValue(), deletePage: vi.fn().mockResolvedValue(),
+  loadPages: vi.fn().mockResolvedValue([
+    { id: 'p1', name: 'Stark Twp Fire', url: 'https://stark.example/bids', state: 'OH', county: 'Stark', active: true, last_checked_at: '2026-11-19T12:00:00Z', last_status: 'Found 1 open bid (1 new, 0 already known)' },
+    { id: 'p2', name: 'Old Page', url: 'https://old.example', state: 'PA', county: null, active: false, last_checked_at: null, last_status: null },
+  ]),
+  loadInbox: vi.fn().mockResolvedValue([{ id: 1, received_at: '2026-11-19T10:00:00Z', sender: 'alerts@bidnet.example', subject: 'New fire bids', status: 'processed', leads_found: 2, note: '' }]),
+  refreshFeed: vi.fn().mockResolvedValue({ feed: { ok: true, inserted: 2, merged: 1 } }), runDaily: vi.fn(), ...over,
 });
 
 const LEADS = [
@@ -200,5 +209,128 @@ describe('FireBid Tracker', () => {
     expect(screen.getByLabelText('JSON feed URL').disabled).toBe(true);
     expect(screen.queryByText('Save')).toBeNull();
     expect(screen.getByText(/Only office staff can change/)).toBeTruthy();
+  });
+
+  it('reads a pasted notice with AI and lists what it found', async () => {
+    h.bids.extractText.mockResolvedValue({ found: 1, ignored: 1, import: { inserted: 1, merged: 0 }, leads: [{ agency_name: 'Riverside FD', county: 'Stark', state: 'OH', due_date: '2026-12-10', items: [{ item_name: 'SCBA packs' }] }] });
+    render(<BidTracker />);
+    fireEvent.click(screen.getByText('Add / Import'));
+    fireEvent.click(screen.getByText('Paste a notice (AI)'));
+    expect(screen.getByText('Read this notice').disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Notice text'), { target: { value: 'LEGAL NOTICE: Riverside Township seeks sealed bids for SCBA packs.' } });
+    fireEvent.change(screen.getByLabelText('Where it came from'), { target: { value: 'Morning Journal' } });
+    fireEvent.click(screen.getByText('Read this notice'));
+    await waitFor(() => expect(h.bids.extractText).toHaveBeenCalledWith({ text: 'LEGAL NOTICE: Riverside Township seeks sealed bids for SCBA packs.', sourceName: 'Morning Journal', sourceUrl: undefined }));
+    expect(await screen.findByText(/Found 1 bid: 1 added, 0 merged/)).toBeTruthy();
+    expect(screen.getByText('Riverside FD')).toBeTruthy();
+  });
+
+  it('says so plainly when the notice has no open fire-equipment bid, and shows AI errors', async () => {
+    h.bids.extractText.mockResolvedValueOnce({ found: 0, ignored: 2, import: null, leads: [] });
+    render(<BidTracker />);
+    fireEvent.click(screen.getByText('Add / Import'));
+    fireEvent.click(screen.getByText('Paste a notice (AI)'));
+    fireEvent.change(screen.getByLabelText('Notice text'), { target: { value: 'City council minutes about parks and the budget.' } });
+    fireEvent.click(screen.getByText('Read this notice'));
+    expect(await screen.findByText(/didn't find an open fire-equipment bid/)).toBeTruthy();
+    h.bids.extractText.mockRejectedValueOnce(new Error('The daily AI limit (150) has been reached.'));
+    fireEvent.click(screen.getByText('Read this notice'));
+    expect(await screen.findByText(/daily AI limit/)).toBeTruthy();
+  });
+
+  it('only shows the Sources button to office staff', () => {
+    render(<BidTracker />);
+    expect(screen.getByRole('button', { name: 'Sources' })).toBeTruthy();
+    cleanup();
+    h.user = { id: 'u2', isOffice: false };
+    render(<BidTracker />);
+    expect(screen.queryByRole('button', { name: 'Sources' })).toBeNull();
+  });
+
+  describe('Sources window', () => {
+    const open = async () => { render(<BidTracker />); fireEvent.click(screen.getByRole('button', { name: 'Sources' })); await screen.findByText('Public pages we watch'); await screen.findByText('Stark Twp Fire'); };
+
+    it('shows what is switched on and what is missing', async () => {
+      await open();
+      expect(await screen.findByText(/AI reading is on \(3 of 150 reads used today\)/)).toBeTruthy();
+      expect(screen.getByText(/SAM.gov is off: add the SAM_API_KEY secret/)).toBeTruthy();
+      expect(screen.getByText(/1 page watched · 2 emails waiting/)).toBeTruthy();
+    });
+
+    it('warns when AI reading is not configured', async () => {
+      h.bids.getFinderStatus.mockResolvedValue({ ai: false, sam: true, aiUsedToday: 0, aiDailyCap: 150, watchedPages: 0, queuedEmails: 0 });
+      await open();
+      expect(await screen.findByText(/AI reading is off: add the ANTHROPIC_API_KEY secret/)).toBeTruthy();
+    });
+
+    it('lists watched pages with their last result and marks paused ones', async () => {
+      await open();
+      const rows = screen.getAllByTestId('watch-row');
+      expect(rows[0].textContent).toContain('Found 1 open bid');
+      expect(rows[1].textContent).toContain('Not checked yet');
+      expect(rows[1].className).toMatch(/opacity-50/);
+      expect(screen.getByText('Resume')).toBeTruthy();
+    });
+
+    it('adds a page, but refuses a non-web address', async () => {
+      await open();
+      const win = within(screen.getByRole('dialog', { name: 'Bid sources' }));
+      fireEvent.change(win.getByLabelText('Name *'), { target: { value: 'Beaver Co' } });
+      fireEvent.change(win.getByLabelText('Page address *'), { target: { value: 'javascript:alert(1)' } });
+      fireEvent.click(win.getByText('Add page'));
+      expect(h.bids.addPage).not.toHaveBeenCalled();
+      fireEvent.change(win.getByLabelText('Page address *'), { target: { value: 'https://beaver.example/rfp' } });
+      fireEvent.change(win.getByLabelText('State'), { target: { value: 'PA' } });
+      fireEvent.change(win.getByLabelText('County'), { target: { value: 'Beaver' } });
+      fireEvent.click(win.getByText('Add page'));
+      await waitFor(() => expect(h.bids.addPage).toHaveBeenCalledWith({ name: 'Beaver Co', url: 'https://beaver.example/rfp', state: 'PA', county: 'Beaver' }));
+    });
+
+    it('checks, pauses, resumes and removes pages', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      await open();
+      fireEvent.click(screen.getAllByText('Check now')[0]);
+      await waitFor(() => expect(h.bids.checkPage).toHaveBeenCalledWith('p1'));
+      fireEvent.click(screen.getByText('Pause'));
+      await waitFor(() => expect(h.bids.updatePage).toHaveBeenCalledWith('p1', { active: false }));
+      fireEvent.click(screen.getByText('Resume'));
+      await waitFor(() => expect(h.bids.updatePage).toHaveBeenCalledWith('p2', { active: true }));
+      fireEvent.click(screen.getAllByText('Remove')[0]);
+      await waitFor(() => expect(h.bids.deletePage).toHaveBeenCalledWith('p1'));
+    });
+
+    it('does not remove a page when the confirmation is declined', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(false);
+      await open();
+      fireEvent.click(screen.getAllByText('Remove')[0]);
+      expect(h.bids.deletePage).not.toHaveBeenCalled();
+    });
+
+    it('saves SAM.gov and email settings', async () => {
+      await open();
+      fireEvent.click(screen.getByLabelText('Check SAM.gov every day'));
+      fireEvent.change(screen.getByLabelText(/Keywords/), { target: { value: ' SCBA, hose ' } });
+      fireEvent.change(screen.getByLabelText(/Alert address/), { target: { value: 'bids@fforcesales.com' } });
+      fireEvent.change(screen.getByLabelText(/Allowed senders/), { target: { value: 'bidnet.com, boss@example.com' } });
+      fireEvent.click(screen.getByText('Save settings'));
+      await waitFor(() => expect(h.bids.saveSettings).toHaveBeenCalledWith({ sam_enabled: false, sam_keywords: 'SCBA, hose', inbound_address: 'bids@fforcesales.com', email_senders: 'bidnet.com, boss@example.com' }));
+    });
+
+    it('warns that no alert emails are accepted until senders are listed, and shows recent emails', async () => {
+      await open();
+      expect(screen.getByText(/No senders listed, so no alert emails are accepted yet/)).toBeTruthy();
+      expect(await screen.findByLabelText('Recent alert emails')).toBeTruthy();
+      expect(screen.getByText(/New fire bids/).closest('li').textContent).toContain('processed · 2 bids');
+    });
+
+    it('runs discovery now and summarises every source, including failures', async () => {
+      await open();
+      fireEvent.click(screen.getByText('Look for bids now'));
+      expect(await screen.findByText(/SAM.gov skipped \(No SAM_API_KEY secret is set\.\)/)).toBeTruthy();
+      expect(screen.getByText(/Pages: 1 checked, 2 bids found \(1 new\)/)).toBeTruthy();
+      h.bids.runDiscovery.mockRejectedValueOnce(new Error('Only office staff can do that'));
+      fireEvent.click(screen.getByText('Look for bids now'));
+      expect(await screen.findByText(/Only office staff can do that/)).toBeTruthy();
+    });
   });
 });

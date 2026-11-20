@@ -5,3 +5,9 @@ verify_jwt = true
 
 [functions.bids-daily]
 verify_jwt = true
+
+[functions.bids-find]
+verify_jwt = true
+
+[functions.bids-inbound]
+verify_jwt = false

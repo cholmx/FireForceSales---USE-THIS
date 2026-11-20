@@ -4,6 +4,7 @@ import { useBids } from './useBids';
 import BidDrawer, { STATUS_STYLES, TONE_STYLES } from './BidDrawer';
 import AddBidModal from './AddBidModal';
 import FeedSettingsModal from './FeedSettingsModal';
+import SourcesModal from './SourcesModal';
 import {
   STATUSES, CATEGORIES, SERVICE_STATES, STATE_NAMES, DEFAULT_FILTERS, todayISO, areaOf, dueInfo, computeMetrics,
   filterLeads, sortLeads, itemSummary, nfpaOf, brandsOf, safeUrl,
@@ -35,6 +36,7 @@ const BidTracker = () => {
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSources, setShowSources] = useState(false);
   const [notice, setNotice] = useState(null);
   const today = todayISO();
   const setF = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value, ...(k === 'state' ? { county: 'all' } : {}) }));
@@ -84,6 +86,7 @@ const BidTracker = () => {
           </span>
           <button onClick={onRefresh} disabled={bids.feedStatus.state === 'busy'} className="px-3 py-2 border border-gray-300 bg-white rounded-lg text-xs font-semibold hover:bg-gray-50 disabled:opacity-60">Refresh Feed</button>
           <button onClick={() => setShowAdd(true)} className="px-3 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700">Add / Import</button>
+          {isOffice && <button onClick={() => setShowSources(true)} className="px-3 py-2 border border-gray-300 bg-white rounded-lg text-xs font-semibold hover:bg-gray-50">Sources</button>}
           <button onClick={() => setShowSettings(true)} className="px-3 py-2 border border-gray-300 bg-white rounded-lg text-xs font-semibold hover:bg-gray-50">Feed Settings</button>
         </div>
       </div>
@@ -237,8 +240,9 @@ const BidTracker = () => {
             try { await bids.deleteLeads({ id: selected.id }); setSelectedId(null); } catch (e) { flash(false, e.message); }
           }} />
       )}
-      {showAdd && <AddBidModal isOffice={isOffice} onImport={(list) => bids.importLeads(list)} onLoadSamples={bids.loadSamples}
+      {showAdd && <AddBidModal isOffice={isOffice} onImport={(list) => bids.importLeads(list)} onExtract={bids.extractText} onLoadSamples={bids.loadSamples}
         onRemoveSamples={() => bids.deleteLeads({ samples: true })} onClose={() => setShowAdd(false)} />}
+      {showSources && <SourcesModal bids={bids} onClose={() => setShowSources(false)} />}
       {showSettings && <FeedSettingsModal settings={bids.settings} isOffice={isOffice} onSave={bids.saveSettings} onRunDaily={bids.runDaily} onClose={() => setShowSettings(false)} />}
     </div>
   );
