@@ -17,7 +17,13 @@ clears users_ff2024.password_hash).
 */
 
 ALTER TABLE users_ff2024 ADD COLUMN IF NOT EXISTS auth_id uuid UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE;
-ALTER TABLE users_ff2024 ALTER COLUMN password_hash DROP NOT NULL;
+-- Legacy plaintext column: relax it only if this database still has it (fresh installs don't)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'users_ff2024' AND column_name = 'password_hash') THEN
+    ALTER TABLE users_ff2024 ALTER COLUMN password_hash DROP NOT NULL;
+  END IF;
+END $$;
 ALTER TABLE office_info_ff2024 DROP COLUMN IF EXISTS password_hash;
 ALTER TABLE office_info_ff2024 DROP COLUMN IF EXISTS username;
 

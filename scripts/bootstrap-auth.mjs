@@ -38,9 +38,10 @@ for (const r of reps ?? []) {
   if (!pw || pw.length < 8) { pw = randomBytes(9).toString('base64url'); generated = true; }
   try {
     const id = await ensureAuthUser(r.username, pw);
-    await admin.from('users_ff2024').update({ auth_id: id, password_hash: null }).eq('id', r.id);
+    await admin.from('users_ff2024').update({ auth_id: id, ...('password_hash' in r ? { password_hash: null } : {}) }).eq('id', r.id);
     console.log(`Migrated ${r.username}${generated ? ` — temporary password: ${pw}` : ' (kept existing password; ask them to change it)'}`);
   } catch (e) { console.error('FAILED', e.message); }
 }
+// Clear any leftover plaintext passwords (errors harmlessly if this database never had the column)
 await admin.from('users_ff2024').update({ password_hash: null }).not('auth_id', 'is', null);
 console.log('Done. Now apply the secure_auth_and_rls migration and rotate any password that was in the old source.');
