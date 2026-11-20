@@ -1,5 +1,4 @@
 // Office-only user management. Needs service-role access, so it cannot run in the browser.
-// Deploy: supabase functions deploy manage-users
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const cors = {
