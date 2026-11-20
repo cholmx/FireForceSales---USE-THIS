@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { motion, AnimatePresence } from 'framer-motion';
 import Login from './components/auth/Login';
 import ChangePassword from './components/auth/ChangePassword';
+import SetPassword from './components/auth/SetPassword';
 import SalesmanDashboard from './components/salesman/SalesmanDashboard';
 import OfficeDashboard from './components/office/OfficeDashboard';
 import InvoiceForm from './components/invoice/InvoiceForm';
@@ -16,7 +17,7 @@ import './App.css';
 import './utils/backupScheduler';
 
 function AppRoutes() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, passwordSetup } = useAuth();
   const { loading: dataLoading, loadError, loadAllData } = useData();
   
   const loading = authLoading || dataLoading;
@@ -39,6 +40,10 @@ function AppRoutes() {
 
   if (!user) {
     return <Login />;
+  }
+
+  if (passwordSetup) {
+    return <SetPassword />;
   }
 
   if (user.mustChangePassword) {
@@ -72,7 +77,7 @@ function AppRoutes() {
         />
         <Route 
           path="/office/*" 
-          element={user.role === 'office' ? <OfficeDashboard /> : <Navigate to="/salesman" replace />} 
+          element={user.isOffice ? <OfficeDashboard /> : <Navigate to="/salesman" replace />} 
         />
         
         {/* Legacy routes for compatibility */}

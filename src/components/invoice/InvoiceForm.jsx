@@ -220,7 +220,7 @@ const InvoiceForm = () => {
             </div>
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Sales Rep</label>
-              {user?.role === 'office' ? (
+              {user?.isOffice ? (
                 <select
                   value={formData.salesRepId || ''}
                   onChange={(e) => {

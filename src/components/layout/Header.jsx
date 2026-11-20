@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import ChangePassword from '../auth/ChangePassword';
+import { roleLabel } from '../../lib/roles';
 import SafeIcon from '../../common/SafeIcon';
 import * as FiIcons from 'react-icons/fi';
 
@@ -47,7 +48,7 @@ const Header = ({ title }) => {
             <div className="flex items-center space-x-2 text-gray-600 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-100">
               <SafeIcon icon={FiUser} className="text-sm" />
               <span className="text-xs font-semibold">{user?.name}</span>
-              <span className="text-[10px] text-gray-400 bg-white px-1.5 py-0.5 rounded border border-gray-100 capitalize font-medium">{user?.role}</span>
+              <span className="text-[10px] text-gray-400 bg-white px-1.5 py-0.5 rounded border border-gray-100 font-medium">{roleLabel(user?.role)}</span>
             </div>
             <button
               onClick={() => setShowChangePassword(true)}

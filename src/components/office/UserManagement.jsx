@@ -2,20 +2,22 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { isValidEmail } from '../../lib/authEmail';
+import { ASSIGNABLE_ROLES, roleLabel } from '../../lib/roles';
 import SafeIcon from '../../common/SafeIcon';
 import * as FiIcons from 'react-icons/fi';
 
-const { FiPlus, FiEdit, FiTrash2, FiUser, FiEye, FiEyeOff, FiCheck, FiAlertCircle } = FiIcons;
+const { FiPlus, FiEdit, FiTrash2, FiUser, FiEye, FiEyeOff, FiCheck, FiAlertCircle, FiSend } = FiIcons;
 
 const UserManagement = () => {
-  const { users, addUser, updateUser, deleteUser } = useData();
+  const { users, addUser, updateUser, deleteUser, resendInvite } = useData();
   const { user: me } = useAuth();
   const [showSalesmanForm, setShowSalesmanForm] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [showPassword, setShowPassword] = useState({});
+  const [sendInvite, setSendInvite] = useState(true); // new people get an email to set their own password
   const [notification, setNotification] = useState(null);
   const [salesmanForm, setSalesmanForm] = useState({
-    username: '',
     name: '',
     password: '',
     confirmPassword: '',
@@ -34,7 +36,7 @@ const UserManagement = () => {
   const handleSalesmanSubmit = async (e) => {
     e.preventDefault();
 
-    const passwordChanging = !editingUser || salesmanForm.password;
+    const passwordChanging = editingUser ? !!salesmanForm.password : !sendInvite;
     if (passwordChanging) {
       if (salesmanForm.password !== salesmanForm.confirmPassword) {
         showNotification('Passwords do not match', 'error');
@@ -46,19 +48,25 @@ const UserManagement = () => {
       }
     }
 
-    // Check if username already exists
-    if (!editingUser && users.some(user => user.username === salesmanForm.username.trim().toLowerCase())) {
-      showNotification('Username already exists', 'error');
+    const email = salesmanForm.email.trim().toLowerCase();
+    if (!isValidEmail(email)) {
+      showNotification('Enter a valid email address', 'error');
+      return;
+    }
+    // Each email can only belong to one account
+    if (users.some(user => user.id !== editingUser?.id && user.email?.toLowerCase() === email)) {
+      showNotification('Another account already uses that email', 'error');
       return;
     }
 
     const userData = {
-      username: salesmanForm.username,
       name: salesmanForm.name,
-      email: salesmanForm.email,
+      email,
       phone: salesmanForm.phone,
       role: salesmanForm.role,
-      password: salesmanForm.password
+      password: salesmanForm.password,
+      invite: !editingUser && sendInvite,
+      redirectTo: window.location.origin
     };
 
     try {
@@ -67,7 +75,7 @@ const UserManagement = () => {
         showNotification('User updated successfully', 'success');
       } else {
         await addUser(userData);
-        showNotification('User added successfully', 'success');
+        showNotification(sendInvite ? `Invite sent to ${email}` : 'User added successfully', 'success');
       }
       resetSalesmanForm();
     } catch (err) {
@@ -77,7 +85,6 @@ const UserManagement = () => {
 
   const resetSalesmanForm = () => {
     setSalesmanForm({
-      username: '',
       name: '',
       password: '',
       confirmPassword: '',
@@ -91,7 +98,6 @@ const UserManagement = () => {
 
   const handleEditSalesman = (user) => {
     setSalesmanForm({
-      username: user.username,
       name: user.name,
       email: user.email || '',
       phone: user.phone || '',
@@ -101,6 +107,15 @@ const UserManagement = () => {
     });
     setEditingUser(user);
     setShowSalesmanForm(true);
+  };
+
+  const handleResendInvite = async (account) => {
+    try {
+      await resendInvite(account.id);
+      showNotification(`Invite re-sent to ${account.email}`, 'success');
+    } catch (err) {
+      showNotification(err.message || 'Could not send the invite', 'error');
+    }
   };
 
   const handleDeleteSalesman = async (user) => {
@@ -120,6 +135,10 @@ const UserManagement = () => {
       [field]: !prev[field]
     }));
   };
+
+  if (!me?.isOwner) {
+    return <p className="text-sm text-gray-600">Only the main admin can manage users.</p>;
+  }
 
   return (
     <div className="space-y-6">
@@ -181,14 +200,13 @@ const UserManagement = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Username *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email (used to sign in) *</label>
                   <input 
-                    type="text" 
-                    value={salesmanForm.username}
-                    onChange={(e) => setSalesmanForm(prev => ({ ...prev, username: e.target.value }))}
+                    type="email" 
+                    value={salesmanForm.email}
+                    onChange={(e) => setSalesmanForm(prev => ({ ...prev, email: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     required
-                    disabled={editingUser}
                   />
                 </div>
                 <div>
@@ -202,25 +220,16 @@ const UserManagement = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Role *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Access level *</label>
                   <select
                     value={salesmanForm.role}
                     onChange={(e) => setSalesmanForm(prev => ({ ...prev, role: e.target.value }))}
-                    disabled={!!editingUser}
+                    disabled={!!editingUser && (editingUser.role === 'owner' || editingUser.id === me?.id)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:bg-gray-100"
                   >
-                    <option value="salesman">Salesman</option>
-                    <option value="office">Office</option>
+                    {editingUser?.role === 'owner' && <option value="owner">{roleLabel('owner')}</option>}
+                    {ASSIGNABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
                   </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                  <input 
-                    type="email" 
-                    value={salesmanForm.email}
-                    onChange={(e) => setSalesmanForm(prev => ({ ...prev, email: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
@@ -231,6 +240,17 @@ const UserManagement = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   />
                 </div>
+                {!editingUser && (
+                  <label className="md:col-span-2 flex items-start space-x-3 text-sm text-gray-700">
+                    <input type="checkbox" className="mt-1" checked={sendInvite} onChange={(e) => setSendInvite(e.target.checked)} />
+                    <span>
+                      <strong>Email an invite</strong> so they choose their own password.
+                      <span className="block text-xs text-gray-500">Untick to set a temporary password yourself instead.</span>
+                    </span>
+                  </label>
+                )}
+                {(editingUser || !sendInvite) && (
+                <>
                 <div className="relative">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Password {editingUser && '(Leave blank to keep current)'}
@@ -268,6 +288,8 @@ const UserManagement = () => {
                     <SafeIcon icon={showPassword.confirmPassword ? FiEyeOff : FiEye} />
                   </button>
                 </div>
+                </>
+                )}
               </div>
 
               <div className="flex justify-end space-x-4">
@@ -309,12 +331,21 @@ const UserManagement = () => {
                       <div>
                         <h4 className="font-semibold text-gray-900">{salesman.name}</h4>
                         <p className="text-sm text-gray-500">
-                          @{salesman.username}
-                          <span className="ml-2 text-[10px] uppercase tracking-wide bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{salesman.role}</span>
+                          {salesman.email || salesman.username}
+                          <span className="ml-2 text-[10px] uppercase tracking-wide bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{roleLabel(salesman.role)}</span>
                         </p>
                       </div>
                     </div>
                     <div className="flex space-x-2">
+                      {salesman.id !== me?.id && salesman.role !== 'owner' && (
+                      <button 
+                        onClick={() => handleResendInvite(salesman)}
+                        className="text-gray-500 hover:text-gray-800"
+                        title="Re-send invite email"
+                      >
+                        <SafeIcon icon={FiSend} />
+                      </button>
+                      )}
                       <button 
                         onClick={() => handleEditSalesman(salesman)}
                         className="text-blue-600 hover:text-blue-800"
@@ -322,7 +353,7 @@ const UserManagement = () => {
                       >
                         <SafeIcon icon={FiEdit} />
                       </button>
-                      {salesman.id !== me?.id && (
+                      {salesman.id !== me?.id && salesman.role !== 'owner' && (
                       <button 
                         onClick={() => handleDeleteSalesman(salesman)}
                         className="text-red-600 hover:text-red-800"

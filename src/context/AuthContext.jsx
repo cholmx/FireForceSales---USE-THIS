@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import supabase from '../lib/supabase';
-import { usernameToEmail } from '../lib/authEmail';
+import { loginIdToEmail } from '../lib/authEmail';
+import { initialLink, needsPasswordSetup } from '../lib/authLink';
+import { isOfficeLevel } from '../lib/roles';
 
 const AuthContext = createContext();
 
@@ -15,6 +17,8 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // True after following an invite / password-reset email link: the person must choose a password.
+  const [passwordSetup, setPasswordSetup] = useState(needsPasswordSetup);
   // Auth user id whose profile is currently loaded; lets us ignore repeat SIGNED_IN events for the same user.
   const loadedAuthId = useRef(null);
 
@@ -27,7 +31,7 @@ export const AuthProvider = ({ children }) => {
       .maybeSingle();
     if (error || !data) { loadedAuthId.current = null; setUser(null); return null; }
     loadedAuthId.current = authUser.id;
-    const profile = { ...data, mustChangePassword: authUser.user_metadata?.must_change_password === true };
+    const profile = { ...data, isOwner: data.role === 'owner', isOffice: isOfficeLevel(data.role), loginEmail: authUser.email, mustChangePassword: authUser.user_metadata?.must_change_password === true };
     setUser(profile);
     return profile;
   };
@@ -39,8 +43,11 @@ export const AuthProvider = ({ children }) => {
       if (active) setLoading(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') {
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordSetup(true);
+      } else if (event === 'SIGNED_OUT') {
         loadedAuthId.current = null;
+        setPasswordSetup(false);
         setUser(null);
       } else if (event === 'SIGNED_IN') {
         // Supabase also emits SIGNED_IN when the tab regains focus and when we re-verify a password.
@@ -58,10 +65,10 @@ export const AuthProvider = ({ children }) => {
     return () => { active = false; sub.subscription.unsubscribe(); };
   }, []);
 
-  const login = async (username, password) => {
+  const login = async (identifier, password) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: usernameToEmail(username),
+        email: loginIdToEmail(identifier),
         password,
       });
       if (error) {
@@ -86,7 +93,7 @@ export const AuthProvider = ({ children }) => {
     if (!user) return { success: false, error: 'Not signed in' };
     if (newPassword.length < 8) return { success: false, error: 'Password must be at least 8 characters' };
     const { error: verifyError } = await supabase.auth.signInWithPassword({
-      email: usernameToEmail(user.username),
+      email: user.loginEmail || loginIdToEmail(user.username),
       password: currentPassword,
     });
     if (verifyError) {
@@ -95,6 +102,25 @@ export const AuthProvider = ({ children }) => {
     const { error } = await supabase.auth.updateUser({ password: newPassword, data: { must_change_password: false } });
     if (error) return { success: false, error: error.message };
     setUser(prev => (prev ? { ...prev, mustChangePassword: false } : prev));
+    return { success: true };
+  };
+
+  // Invite / reset links sign the person in without a password, so there is no "current password" to check.
+  const setInitialPassword = async (newPassword) => {
+    if (newPassword.length < 8) return { success: false, error: 'Password must be at least 8 characters' };
+    const { error } = await supabase.auth.updateUser({ password: newPassword, data: { must_change_password: false } });
+    if (error) return { success: false, error: error.message };
+    setPasswordSetup(false);
+    setUser(prev => (prev ? { ...prev, mustChangePassword: false } : prev));
+    return { success: true };
+  };
+
+  // Always reports success for unknown addresses so the form can't be used to discover who has an account.
+  const requestPasswordReset = async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(String(email).trim().toLowerCase(), {
+      redirectTo: window.location.origin,
+    });
+    if (error && error.status === 429) return { success: false, error: 'Too many requests. Please wait a few minutes and try again.' };
     return { success: true };
   };
 
@@ -108,6 +134,10 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     changePassword,
+    setInitialPassword,
+    requestPasswordReset,
+    passwordSetup,
+    linkError: initialLink.error,
     loading
   };
 

@@ -7,10 +7,12 @@ import * as FiIcons from 'react-icons/fi';
 const { FiUser, FiLock, FiAlertCircle, FiEye, FiEyeOff } = FiIcons;
 
 const Login = () => {
-  const { login } = useAuth();
-  const [username, setUsername] = useState('');
+  const { login, requestPasswordReset, linkError } = useAuth();
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(linkError || '');
+  const [mode, setMode] = useState('login'); // 'login' | 'reset'
+  const [resetSent, setResetSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -19,9 +21,9 @@ const Login = () => {
     setError('');
     setLoading(true);
     try {
-      const result = await login(username, password);
+      const result = await login(identifier, password);
       if (!result.success) {
-        setError(result.error || 'Invalid username or password');
+        setError(result.error || 'Invalid email or password');
       }
     } catch (error) {
       setError('An error occurred. Please try again.');
@@ -29,6 +31,16 @@ const Login = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleReset = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    const result = await requestPasswordReset(identifier);
+    setLoading(false);
+    if (!result.success) return setError(result.error);
+    setResetSent(true);
   };
 
   return (
@@ -59,19 +71,47 @@ const Login = () => {
             </motion.div>
           )}
 
+          {mode === 'reset' ? (
+            resetSent ? (
+              <div className="space-y-4 text-sm text-gray-600">
+                <p>If that email belongs to an account, we've sent a link to set a new password. Check your inbox (and spam).</p>
+                <button type="button" onClick={() => { setMode('login'); setResetSent(false); }} className="text-xs font-semibold text-red-600 hover:text-red-700">Back to sign in</button>
+              </div>
+            ) : (
+              <form onSubmit={handleReset} className="space-y-5">
+                <p className="text-sm text-gray-600">Enter your email and we'll send you a link to set a new password.</p>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white"
+                  placeholder="you@example.com"
+                  required
+                />
+                <button type="submit" disabled={loading} className="w-full bg-brand-gradient text-white py-2.5 rounded-lg text-sm font-semibold disabled:opacity-70">
+                  {loading ? 'Sending...' : 'Send reset link'}
+                </button>
+                <button type="button" onClick={() => setMode('login')} className="block mx-auto text-xs font-semibold text-gray-500 hover:text-gray-700">Back to sign in</button>
+              </form>
+            )
+          ) : (
+            <>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Username</label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Email</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <SafeIcon icon={FiUser} className="text-gray-400 text-sm" />
                 </div>
                 <input
                   type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  inputMode="email"
+                  autoComplete="username"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   className="pl-9 w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-gradient-start/20 focus:border-gradient-start transition-all duration-200 placeholder-gray-400 bg-gray-50 focus:bg-white"
-                  placeholder="Enter your username"
+                  placeholder="you@example.com"
                   required
                 />
               </div>
@@ -109,6 +149,11 @@ const Login = () => {
               {loading ? 'Signing In...' : 'Sign In'}
             </button>
           </form>
+              <button type="button" onClick={() => { setError(''); setMode('reset'); }} className="block mx-auto mt-4 text-xs font-semibold text-gray-500 hover:text-red-600">
+                Forgot password?
+              </button>
+            </>
+          )}
         </div>
         <p className="text-center text-xs text-gray-400 mt-6">
           &copy; {new Date().getFullYear()} Fire Force Safety. All rights reserved.

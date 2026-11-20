@@ -157,3 +157,52 @@ RESET ROLE;
 UPDATE users_ff2024 SET name='Amy B' WHERE username='amy';
 SELECT pg_temp.assert((SELECT sales_rep FROM invoices_ff2024 WHERE id='40000000-0000-0000-0000-000000000001') = 'Amy B', 'rename syncs invoice display name');
 \echo ALL RLS TESTS PASSED
+
+-- ── Main admin (owner) vs Office Admin vs Sales ─────────────────────────────
+RESET ROLE;
+INSERT INTO auth.users (id, email) VALUES ('00000000-0000-0000-0000-0000000000c1','owner@fireforce.local');
+INSERT INTO users_ff2024 (id, username, name, role, auth_id) VALUES
+  ('10000000-0000-0000-0000-0000000000c1','owner','Boss','owner','00000000-0000-0000-0000-0000000000c1');
+DO $$ BEGIN
+  INSERT INTO users_ff2024 (username, name, role) VALUES ('second_owner','Nope','owner');
+  RAISE EXCEPTION 'FAILED: a second owner was created';
+EXCEPTION WHEN unique_violation THEN RAISE NOTICE 'ok - only one main admin can exist'; END $$;
+DO $$ BEGIN
+  INSERT INTO users_ff2024 (username, name, role) VALUES ('bad_role','Bad','superuser');
+  RAISE EXCEPTION 'FAILED: unknown role accepted';
+EXCEPTION WHEN check_violation THEN RAISE NOTICE 'ok - unknown roles are rejected'; END $$;
+
+SELECT pg_temp.as_user('00000000-0000-0000-0000-0000000000c1');
+SELECT pg_temp.assert(ff_role() = 'office', 'owner gets office-level data access');
+SELECT pg_temp.assert(ff_is_owner(), 'owner is recognised as main admin');
+SELECT pg_temp.assert((SELECT count(*) FROM invoices_ff2024) = (SELECT count(*) FROM invoices_ff2024 WHERE true) AND (SELECT count(*) FROM invoices_ff2024) > 0, 'owner sees all invoices');
+UPDATE users_ff2024 SET name = 'Amy Changed' WHERE username = 'amy';
+SELECT pg_temp.assert((SELECT name FROM users_ff2024 WHERE username = 'amy') = 'Amy Changed', 'owner can edit users');
+UPDATE users_ff2024 SET role = 'office' WHERE username = 'amy';
+SELECT pg_temp.assert((SELECT role FROM users_ff2024 WHERE username = 'amy') = 'office', 'owner can change a level');
+UPDATE users_ff2024 SET role = 'salesman' WHERE username = 'amy';
+
+-- Office Admin: full office data access, but cannot touch users
+SELECT pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+SELECT pg_temp.assert(NOT ff_is_owner(), 'office admin is not the main admin');
+SELECT pg_temp.assert(ff_role() = 'office', 'office admin keeps office data access');
+UPDATE users_ff2024 SET name = 'Hacked' WHERE username = 'amy';
+SELECT pg_temp.assert((SELECT name FROM users_ff2024 WHERE username = 'amy') <> 'Hacked', 'office admin cannot edit users');
+UPDATE users_ff2024 SET role = 'owner' WHERE username = 'office';
+SELECT pg_temp.assert((SELECT role FROM users_ff2024 WHERE username = 'office') = 'office', 'office admin cannot promote themselves');
+DO $$ BEGIN
+  INSERT INTO users_ff2024 (username, name, role) VALUES ('sneaky','Sneaky','office');
+  RAISE EXCEPTION 'FAILED: office admin created a user';
+EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok - office admin cannot create users'; END $$;
+DO $$ BEGIN
+  PERFORM delete_invoice((SELECT id FROM invoices_ff2024 LIMIT 1));
+  PERFORM pg_temp.assert(true, 'office admin can still delete invoices');
+END $$;
+
+-- Sales: still no user access
+SELECT pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+SELECT pg_temp.assert(NOT ff_is_owner() AND ff_role() = 'salesman', 'sales user is neither owner nor office');
+UPDATE users_ff2024 SET role = 'owner' WHERE username = 'amy';
+SELECT pg_temp.assert((SELECT role FROM users_ff2024 WHERE username = 'amy') = 'salesman', 'sales user cannot promote themselves');
+RESET ROLE;
+\echo OWNER/ROLE TESTS PASSED

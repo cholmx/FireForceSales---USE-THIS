@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useAuth } from '../../context/AuthContext';
 import Header from '../layout/Header';
 import InvoiceForm from '../invoice/InvoiceForm';
 import InvoiceList from '../invoice/InvoiceList';
@@ -20,6 +21,7 @@ const { FiBarChart3, FiFileText, FiUsers, FiSettings, FiUserCheck, FiShield, FiP
 
 const OfficeDashboard = () => {
   const location = useLocation();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [showBackupReminder, setShowBackupReminder] = useState(false);
 
@@ -50,7 +52,7 @@ const OfficeDashboard = () => {
     };
   }, []);
 
-  const navItems = [
+  const allNavItems = [
     { path: '/office', label: 'Dashboard', icon: FiBarChart3 },
     { path: '/office/invoice/new', label: 'New Invoice', icon: FiPlusCircle },
     { path: '/office/invoices', label: 'Invoices', icon: FiFileText },
@@ -61,6 +63,8 @@ const OfficeDashboard = () => {
     { path: '/office/backup', label: 'Backup', icon: FiShield },
     { path: '/office/settings', label: 'Settings', icon: FiSettings },
   ];
+  // Only the main admin manages people and their access levels
+  const navItems = allNavItems.filter(item => item.path !== '/office/users' || user?.isOwner);
 
   const handleBackupCreated = () => {
     setShowBackupReminder(false);
@@ -117,7 +121,7 @@ const OfficeDashboard = () => {
             <Route path="/invoice/edit/:id" element={<InvoiceForm />} />
             <Route path="/invoices" element={<InvoiceList userRole="office" />} />
             <Route path="/customers" element={<CustomerManagement />} />
-            <Route path="/users" element={<UserManagement />} />
+            {user?.isOwner && <Route path="/users" element={<UserManagement />} />}
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/activity" element={<ActivityLog />} />
             <Route path="/backup" element={<BackupSystem />} />

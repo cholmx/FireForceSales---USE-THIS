@@ -1,19 +1,20 @@
 // Creates the first office account (and migrates any legacy salesmen that still have no auth account). Run locally (never ship the service key to the browser):
-//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... OFFICE_USERNAME=ffoffice1 OFFICE_PASSWORD='<new strong pw>' \
+//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... OFFICE_EMAIL=you@example.com OFFICE_PASSWORD='<new strong pw>' \
 //   node scripts/bootstrap-auth.mjs
-// 1. Creates the office admin (OFFICE_USERNAME/OFFICE_PASSWORD, 8+ chars).
+// 1. Creates the main admin / owner (OFFICE_EMAIL/OFFICE_PASSWORD, 8+ chars).
 // 2. Creates auth accounts for existing salesmen, reusing their old password as a temporary one
 //    (anything under 8 chars gets a random one printed below). Then nulls password_hash.
 import { createClient } from '@supabase/supabase-js';
 import { randomBytes } from 'node:crypto';
 
-const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OFFICE_USERNAME, OFFICE_PASSWORD } = process.env;
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !OFFICE_USERNAME || !OFFICE_PASSWORD || OFFICE_PASSWORD.length < 8) {
-  console.error('Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OFFICE_USERNAME, OFFICE_PASSWORD (8+ chars)');
+const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OFFICE_EMAIL, OFFICE_PASSWORD } = process.env;
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !OFFICE_EMAIL || !OFFICE_PASSWORD || OFFICE_PASSWORD.length < 8) {
+  console.error('Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OFFICE_EMAIL, OFFICE_PASSWORD (8+ chars)');
   process.exit(1);
 }
 const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-const emailFor = (u) => `${u.trim().toLowerCase()}@fireforce.local`;
+// Real emails are used as-is; legacy usernames (no @) map to the synthetic address they were created with.
+const emailFor = (u) => (u.includes('@') ? u.trim().toLowerCase() : `${u.trim().toLowerCase()}@fireforce.local`);
 
 async function ensureAuthUser(username, password) {
   const { data, error } = await admin.auth.admin.createUser({ email: emailFor(username), password, email_confirm: true, user_metadata: { must_change_password: true } });
@@ -22,12 +23,12 @@ async function ensureAuthUser(username, password) {
 }
 
 // Office admin
-const { data: existingOffice } = await admin.from('users_ff2024').select('id').eq('username', OFFICE_USERNAME).maybeSingle();
+const { data: existingOffice } = await admin.from('users_ff2024').select('id').eq('username', OFFICE_EMAIL).maybeSingle();
 if (!existingOffice) {
-  const id = await ensureAuthUser(OFFICE_USERNAME, OFFICE_PASSWORD);
-  const { error } = await admin.from('users_ff2024').insert({ username: OFFICE_USERNAME, name: 'Office Administrator', role: 'office', auth_id: id });
+  const id = await ensureAuthUser(OFFICE_EMAIL, OFFICE_PASSWORD);
+  const { error } = await admin.from('users_ff2024').insert({ username: OFFICE_EMAIL, email: OFFICE_EMAIL.trim().toLowerCase(), name: 'Main Admin', role: 'owner', auth_id: id });
   if (error) throw error;
-  console.log(`Created office admin ${OFFICE_USERNAME}`);
+  console.log(`Created main admin ${OFFICE_EMAIL}`);
 }
 
 // Existing salesmen

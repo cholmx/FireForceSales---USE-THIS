@@ -304,7 +304,8 @@ export const DataProvider = ({ children }) => {
     const data = await callManageUsers({
       action: 'create',
       role: userData.role,
-      username: userData.username,
+      invite: userData.invite === true,
+      redirectTo: userData.redirectTo,
       name: userData.name,
       email: userData.email,
       phone: userData.phone,
@@ -318,12 +319,17 @@ export const DataProvider = ({ children }) => {
     await callManageUsers({
       action: 'update',
       id,
+      role: updates.role,
       name: updates.name,
       email: updates.email,
       phone: updates.phone,
       password: updates.password || undefined,
     });
     await loadUsers();
+  };
+
+  const resendInvite = async (id) => {
+    await callManageUsers({ action: 'resend_invite', id, redirectTo: window.location.origin });
   };
 
   const deleteUser = async (id) => {
@@ -396,7 +402,7 @@ export const DataProvider = ({ children }) => {
     invoices, customers, users, officeInfo, settings, loading, loadError,
     addInvoice, updateInvoice, deleteInvoice,
     addCustomer, updateCustomer, deleteCustomer,
-    addUser, updateUser, deleteUser,
+    addUser, updateUser, deleteUser, resendInvite,
     updateOfficeInfo, updateSettings, loadAllData,
   };
 

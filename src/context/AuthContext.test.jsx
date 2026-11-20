@@ -5,8 +5,8 @@ import { render, screen, act, waitFor, cleanup } from '@testing-library/react';
 
 // Minimal fake of the Supabase client that fires the same auth events the real one does.
 const h = vi.hoisted(() => {
-  const state = { listener: null, metadata: { must_change_password: true } };
-  const sessionFor = (meta) => ({ user: { id: 'auth-1', user_metadata: { ...meta } } });
+  const state = { listener: null, metadata: { must_change_password: true }, role: 'office' };
+  const sessionFor = (meta) => ({ user: { id: 'auth-1', email: 'boss@example.com', user_metadata: { ...meta } } });
   const supabase = {
     auth: {
       getSession: vi.fn(async () => ({ data: { session: sessionFor(state.metadata) } })),
@@ -29,7 +29,7 @@ const h = vi.hoisted(() => {
     from: vi.fn(() => ({
       select: () => ({ eq: () => ({
         // slow-ish profile fetch, like a network round trip
-        maybeSingle: () => new Promise((r) => setTimeout(() => r({ data: { id: 'u1', username: 'ffoffice1', name: 'Office', role: 'office' }, error: null }), 20)),
+        maybeSingle: () => new Promise((r) => setTimeout(() => r({ data: { id: 'u1', username: 'ffoffice1', name: 'Office', role: state.role }, error: null }), 20)),
       }) }),
     })),
   };
@@ -42,11 +42,11 @@ import { AuthProvider, useAuth } from './AuthContext';
 let api;
 const Probe = () => {
   api = useAuth();
-  return <div data-testid="flag">{api.loading ? 'loading' : api.user ? `must=${api.user.mustChangePassword}` : 'signed-out'}</div>;
+  return <div><div data-testid="flag">{api.loading ? 'loading' : api.user ? `must=${api.user.mustChangePassword}` : 'signed-out'}</div><div data-testid="level">{api.user ? `owner=${api.user.isOwner} office=${api.user.isOffice}` : ''}</div></div>;
 };
 
 describe('forced password change', () => {
-  beforeEach(() => { h.state.metadata = { must_change_password: true }; h.state.listener = null; });
+  beforeEach(() => { h.state.metadata = { must_change_password: true }; h.state.listener = null; h.state.role = 'office'; h.supabase.auth.signInWithPassword.mockClear(); });
   afterEach(() => cleanup());
 
   it('clears the flag and stays cleared after the password is changed', async () => {
@@ -68,5 +68,25 @@ describe('forced password change', () => {
     await waitFor(() => expect(screen.getByTestId('flag').textContent).toBe('must=false'));
     await act(async () => { h.state.listener('SIGNED_IN', { user: { id: 'auth-1', user_metadata: {} } }); await new Promise((r) => setTimeout(r, 80)); });
     expect(screen.getByTestId('flag').textContent).toBe('must=false');
+  });
+
+  it('marks the main admin as owner and office-level, an Office Admin as office-level only, Sales as neither', async () => {
+    for (const [role, expected] of [['owner', 'owner=true office=true'], ['office', 'owner=false office=true'], ['salesman', 'owner=false office=false']]) {
+      cleanup();
+      h.state.metadata = {};
+      h.state.role = role;
+      render(<AuthProvider><Probe /></AuthProvider>);
+      await waitFor(() => expect(screen.getByTestId('level').textContent).toBe(expected));
+    }
+  });
+
+  it('signs in with an email as typed, and maps a legacy username to its old address', async () => {
+    h.state.metadata = {};
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('flag').textContent).toBe('must=false'));
+    await act(async () => { await api.login('  Boss@Example.com ', 'pw'); });
+    expect(h.supabase.auth.signInWithPassword).toHaveBeenLastCalledWith({ email: 'boss@example.com', password: 'pw' });
+    await act(async () => { await api.login('ffoffice1', 'pw'); });
+    expect(h.supabase.auth.signInWithPassword).toHaveBeenLastCalledWith({ email: 'ffoffice1@fireforce.local', password: 'pw' });
   });
 });
