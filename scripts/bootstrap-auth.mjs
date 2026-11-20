@@ -1,4 +1,4 @@
-// One-time migration to Supabase Auth. Run locally (never ship the service key to the browser):
+// Creates the first office account (and migrates any legacy salesmen that still have no auth account). Run locally (never ship the service key to the browser):
 //   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... OFFICE_USERNAME=ffoffice1 OFFICE_PASSWORD='<new strong pw>' \
 //   node scripts/bootstrap-auth.mjs
 // 1. Creates the office admin (OFFICE_USERNAME/OFFICE_PASSWORD, 8+ chars).
@@ -44,4 +44,4 @@ for (const r of reps ?? []) {
 }
 // Clear any leftover plaintext passwords (errors harmlessly if this database never had the column)
 await admin.from('users_ff2024').update({ password_hash: null }).not('auth_id', 'is', null);
-console.log('Done. Now apply the secure_auth_and_rls migration and rotate any password that was in the old source.');
+console.log('Done. Sign in as the office user and add everyone else under Office -> Users.');

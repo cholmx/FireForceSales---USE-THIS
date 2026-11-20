@@ -20,7 +20,7 @@ VITE_SUPABASE_ANON_KEY=<anon key>
 
 ## Database & auth
 
-Migrations live in `src/supabase/migrations/` (apply in filename order). Security model:
+Migrations live in `supabase/migrations/` (apply in filename order; the first one creates the base tables). Security model:
 
 - Sign-in is Supabase Auth. Usernames map to `username@fireforce.local`; the role comes from `users_ff2024`.
 - Row Level Security: anonymous users get nothing. Salesmen only see/edit invoices where `sales_rep_id` is theirs;
@@ -29,16 +29,28 @@ Migrations live in `src/supabase/migrations/` (apply in filename order). Securit
 - Creating/resetting/deleting salesman accounts needs the service key, so it runs in the `manage-users`
   Edge Function (`supabase functions deploy manage-users`). It only accepts office callers.
 
-### First-time / migrating an existing install
+### First-time setup
 
-```bash
-SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... OFFICE_USERNAME=ffoffice1 OFFICE_PASSWORD='<strong password>' \
-  node scripts/bootstrap-auth.mjs
-```
+1. Apply the migrations in `supabase/migrations/` (Bolt does this for you; otherwise paste each file into the Supabase SQL editor in filename order).
+2. Deploy the `manage-users` Edge Function.
+3. Create the first office account, either with the script (run locally; needs the service-role key):
+
+   ```bash
+   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... OFFICE_USERNAME=ffoffice1 OFFICE_PASSWORD='<strong password>' \
+     node scripts/bootstrap-auth.mjs
+   ```
+
+   or by hand: Supabase dashboard -> Authentication -> Users -> Add user (`ffoffice1@fireforce.local`, a password, auto-confirm), then in the SQL editor:
+
+   ```sql
+   insert into users_ff2024 (username, name, role, auth_id)
+   values ('ffoffice1', 'Office Administrator', 'office', '<the new auth user id>');
+   ```
+
+4. Sign in as that user and add everyone else under Office -> Users.
 
 Accounts created by the script (and by an admin password reset) must choose their own password at first sign-in.
-
-Then apply the migrations. Never put the service-role key in the browser or in `.env` files that ship with the app.
+Never put the service-role key in the browser or in `.env` files that ship with the app.
 
 ## Invoice numbers & audit trail
 

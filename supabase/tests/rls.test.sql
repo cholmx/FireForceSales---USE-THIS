@@ -15,10 +15,10 @@ INSERT INTO auth.users (id, email) VALUES
   ('00000000-0000-0000-0000-0000000000a1','office@fireforce.local'),
   ('00000000-0000-0000-0000-0000000000b1','amy@fireforce.local'),
   ('00000000-0000-0000-0000-0000000000b2','bob@fireforce.local');
-INSERT INTO users_ff2024 (id, username, name, role, password_hash, auth_id) VALUES
-  ('10000000-0000-0000-0000-0000000000a1','office','Office','office',NULL,'00000000-0000-0000-0000-0000000000a1'),
-  ('10000000-0000-0000-0000-0000000000b1','amy','Amy','salesman',NULL,'00000000-0000-0000-0000-0000000000b1'),
-  ('10000000-0000-0000-0000-0000000000b2','bob','Bob','salesman',NULL,'00000000-0000-0000-0000-0000000000b2');
+INSERT INTO users_ff2024 (id, username, name, role, auth_id) VALUES
+  ('10000000-0000-0000-0000-0000000000a1','office','Office','office','00000000-0000-0000-0000-0000000000a1'),
+  ('10000000-0000-0000-0000-0000000000b1','amy','Amy','salesman','00000000-0000-0000-0000-0000000000b1'),
+  ('10000000-0000-0000-0000-0000000000b2','bob','Bob','salesman','00000000-0000-0000-0000-0000000000b2');
 INSERT INTO invoices_ff2024 (id, sales_rep, sales_rep_id, customer_name, status) VALUES
   ('20000000-0000-0000-0000-000000000001','Amy','10000000-0000-0000-0000-0000000000b1','C1','pending'),
   ('20000000-0000-0000-0000-000000000002','Bob','10000000-0000-0000-0000-0000000000b2','C2','pending');
@@ -46,7 +46,7 @@ DO $$ BEGIN
   PERFORM pg_temp.assert(NOT EXISTS (SELECT 1 FROM settings_ff2024 WHERE value='99'), 'amy cannot change settings');
 END $$;
 DO $$ BEGIN
-  INSERT INTO users_ff2024 (username, name, role, password_hash) VALUES ('evil','Evil','office','x');
+  INSERT INTO users_ff2024 (username, name, role) VALUES ('evil','Evil','office');
   RAISE EXCEPTION 'FAILED: amy created an office user';
 EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok - amy cannot create users'; END $$;
 DO $$ BEGIN

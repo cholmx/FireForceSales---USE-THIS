@@ -1,5 +1,6 @@
 -- Minimal stand-ins for Supabase's auth schema + roles so app SQL can run on plain Postgres (CI / local).
 CREATE SCHEMA IF NOT EXISTS auth;
+CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text);
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS
 $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 DO $$ BEGIN
