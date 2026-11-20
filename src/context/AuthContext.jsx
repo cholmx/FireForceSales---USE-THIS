@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import supabase from '../lib/supabase';
 import { usernameToEmail } from '../lib/authEmail';
 
@@ -15,15 +15,18 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Auth user id whose profile is currently loaded; lets us ignore repeat SIGNED_IN events for the same user.
+  const loadedAuthId = useRef(null);
 
   const loadProfile = async (authUser) => {
-    if (!authUser) { setUser(null); return null; }
+    if (!authUser) { loadedAuthId.current = null; setUser(null); return null; }
     const { data, error } = await supabase
       .from('users_ff2024')
       .select('id, username, name, role')
       .eq('auth_id', authUser.id)
       .maybeSingle();
-    if (error || !data) { setUser(null); return null; }
+    if (error || !data) { loadedAuthId.current = null; setUser(null); return null; }
+    loadedAuthId.current = authUser.id;
     const profile = { ...data, mustChangePassword: authUser.user_metadata?.must_change_password === true };
     setUser(profile);
     return profile;
@@ -36,9 +39,21 @@ export const AuthProvider = ({ children }) => {
       if (active) setLoading(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') setUser(null);
-      // defer to avoid deadlocking inside the auth callback
-      else if (event === 'SIGNED_IN') setTimeout(() => active && loadProfile(session?.user ?? null), 0);
+      if (event === 'SIGNED_OUT') {
+        loadedAuthId.current = null;
+        setUser(null);
+      } else if (event === 'SIGNED_IN') {
+        // Supabase also emits SIGNED_IN when the tab regains focus and when we re-verify a password.
+        // Reloading then would use a stale session (e.g. the "must change password" flag from before
+        // the change), so only load when it's a different user than the one we already have.
+        if (session?.user?.id && session.user.id === loadedAuthId.current) return;
+        // defer to avoid deadlocking inside the auth callback
+        setTimeout(() => active && loadProfile(session?.user ?? null), 0);
+      } else if (event === 'USER_UPDATED' && session?.user) {
+        // e.g. the password was changed: pick up the new metadata without refetching the profile
+        const must = session.user.user_metadata?.must_change_password === true;
+        setUser(prev => (prev ? { ...prev, mustChangePassword: must } : prev));
+      }
     });
     return () => { active = false; sub.subscription.unsubscribe(); };
   }, []);
