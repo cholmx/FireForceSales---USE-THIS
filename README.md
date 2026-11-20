@@ -65,18 +65,32 @@ Ownership can't be handed out in the app; to move it, change it in SQL.
 Accounts created with an admin-set password (and admin password resets) must choose their own password at first sign-in.
 Never put the service-role key in the browser or in `.env` files that ship with the app.
 
-### Invites and password-reset emails
+### Email (invites and password resets) via Resend
 
-Office -> Users -> Add User sends an **invite email** by default: the person clicks the link, lands in the app, and chooses their own
-password. "Forgot password?" on the sign-in page sends a reset link the same way. For these emails to arrive, configure Supabase:
+Office -> Users -> Add User emails an **invite** by default (the person clicks the link and chooses their own password), and
+"Forgot password?" on the sign-in page emails a reset link. The `manage-users` Edge Function sends these through
+[Resend](https://resend.com), so Supabase's own mailer and SMTP settings are not used.
 
-- **Authentication -> URL Configuration:** set *Site URL* to the app's address and add it (and any custom domain) to *Redirect URLs*.
-  Otherwise the links in the emails won't bring people back to the app.
-- **Authentication -> SMTP Settings:** add a custom SMTP provider. Supabase's built-in sender only delivers to your own team's
-  addresses and is heavily rate-limited, so invites to other people won't arrive without it.
-- Optionally edit the *Invite user* and *Reset password* templates so they read well.
+One-time setup:
 
-If email isn't set up yet, untick "Email an invite" and set a temporary password instead.
+1. **Resend -> Domains:** add and verify your sending domain (e.g. `fforce.com`) by adding the DNS records Resend shows.
+   You can only send from a verified domain (a Gmail address can't be the sender).
+2. **Resend -> API Keys:** create a key with sending access.
+3. **Supabase -> Edge Functions -> Secrets** (or Bolt's secrets screen): add
+   - `RESEND_API_KEY` = the key (required)
+   - `EMAIL_FROM` = `Fire Force <noreply@fforce.com>` (use an address on your verified domain)
+   - `EMAIL_REPLY_TO` = the address replies should go to, e.g. your office inbox (optional)
+
+   Until `EMAIL_FROM` is set, mail goes out from Resend's sandbox sender, which only delivers to your own Resend account email. That is
+   handy for a first test. Never commit the key.
+4. **Supabase -> Authentication -> URL Configuration:** set *Site URL* to the app's address and add it (and any custom domain) to
+   *Redirect URLs*, so the link in the email brings people back to the app.
+5. Redeploy `manage-users` after changing secrets or code.
+
+If an invite email fails (for example the key isn't set yet), the account is still created and the Users screen says so; fix the
+setting and use the send icon on that person's card to re-send. Untick "Email an invite" to set a temporary password instead.
+
+Emails are built in `supabase/functions/manage-users/index.ts`; `npm test` exercises that function against a fake Resend.
 
 ## Invoice numbers & audit trail
 

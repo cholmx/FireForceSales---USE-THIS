@@ -30,7 +30,7 @@ const UserManagement = () => {
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
+    setTimeout(() => setNotification(null), type === 'error' ? 10000 : 3000);
   };
 
   const handleSalesmanSubmit = async (e) => {
@@ -74,8 +74,13 @@ const UserManagement = () => {
         await updateUser(editingUser.id, userData);
         showNotification('User updated successfully', 'success');
       } else {
-        await addUser(userData);
-        showNotification(sendInvite ? `Invite sent to ${email}` : 'User added successfully', 'success');
+        const result = await addUser(userData);
+        if (sendInvite && result?.emailSent === false) {
+          // The account exists; only the email failed (e.g. Resend not configured yet)
+          showNotification(`Account created for ${email}, but the invite email did not send: ${result.emailError} Use the send icon on their card to try again.`, 'error');
+        } else {
+          showNotification(sendInvite ? `Invite sent to ${email}` : 'User added successfully', 'success');
+        }
       }
       resetSalesmanForm();
     } catch (err) {

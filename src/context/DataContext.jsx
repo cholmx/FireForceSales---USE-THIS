@@ -312,7 +312,7 @@ export const DataProvider = ({ children }) => {
       password: userData.password,
     });
     await loadUsers();
-    return data.user;
+    return data; // { user, emailSent?, emailError? }
   };
 
   const updateUser = async (id, updates) => {

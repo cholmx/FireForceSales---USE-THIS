@@ -11,6 +11,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src')
     }
   },
+  test: {
+    // The Edge Function imports supabase-js from esm.sh (Deno style); tests swap in a local stub.
+    alias: { 'https://esm.sh/@supabase/supabase-js@2': path.resolve(__dirname, './supabase/tests/stubs/supabase-js.js') },
+  },
   server: {
     historyApiFallback: true,
   },

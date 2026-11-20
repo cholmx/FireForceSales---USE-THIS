@@ -26,6 +26,7 @@ const h = vi.hoisted(() => {
       }),
       signOut: vi.fn(async () => { state.listener?.('SIGNED_OUT', null); return { error: null }; }),
     },
+    functions: { invoke: vi.fn(async () => ({ data: { ok: true }, error: null })) },
     from: vi.fn(() => ({
       select: () => ({ eq: () => ({
         // slow-ish profile fetch, like a network round trip
@@ -88,5 +89,28 @@ describe('forced password change', () => {
     expect(h.supabase.auth.signInWithPassword).toHaveBeenLastCalledWith({ email: 'boss@example.com', password: 'pw' });
     await act(async () => { await api.login('ffoffice1', 'pw'); });
     expect(h.supabase.auth.signInWithPassword).toHaveBeenLastCalledWith({ email: 'ffoffice1@fireforce.local', password: 'pw' });
+  });
+
+  it('sends "forgot password" through the manage-users function (Resend), lowercased, with the app address to return to', async () => {
+    h.state.metadata = {};
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('flag').textContent).toBe('must=false'));
+    let result;
+    await act(async () => { result = await api.requestPasswordReset('  Boss@Example.com '); });
+    expect(result).toEqual({ success: true });
+    expect(h.supabase.functions.invoke).toHaveBeenCalledWith('manage-users', {
+      body: { action: 'request_reset', email: 'boss@example.com', redirectTo: window.location.origin },
+    });
+  });
+
+  it('tells the person to try again if the reset email could not be requested', async () => {
+    h.supabase.functions.invoke.mockResolvedValueOnce({ data: null, error: new Error('network') });
+    h.state.metadata = {};
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('flag').textContent).toBe('must=false'));
+    let result;
+    await act(async () => { result = await api.requestPasswordReset('boss@example.com'); });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/try again/i);
   });
 });

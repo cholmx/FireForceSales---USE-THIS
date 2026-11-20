@@ -115,12 +115,13 @@ export const AuthProvider = ({ children }) => {
     return { success: true };
   };
 
-  // Always reports success for unknown addresses so the form can't be used to discover who has an account.
+  // "Forgot password?": the manage-users function emails the reset link through Resend. It answers ok for
+  // unknown addresses too, so this form can't be used to find out who has an account.
   const requestPasswordReset = async (email) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(String(email).trim().toLowerCase(), {
-      redirectTo: window.location.origin,
+    const { error } = await supabase.functions.invoke('manage-users', {
+      body: { action: 'request_reset', email: String(email).trim().toLowerCase(), redirectTo: window.location.origin },
     });
-    if (error && error.status === 429) return { success: false, error: 'Too many requests. Please wait a few minutes and try again.' };
+    if (error) return { success: false, error: 'We could not send the email right now. Please try again in a minute.' };
     return { success: true };
   };
 
