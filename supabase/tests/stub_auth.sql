@@ -11,3 +11,7 @@ END $$;
 GRANT USAGE ON SCHEMA public, auth TO anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
 
+
+-- Supabase's helper that reads the caller's JWT role ('service_role' for the service key)
+CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS
+$$ SELECT NULLIF(current_setting('request.jwt.claim.role', true), '') $$;

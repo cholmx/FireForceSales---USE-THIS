@@ -80,6 +80,9 @@ function AppRoutes() {
           element={user.isOffice ? <OfficeDashboard /> : <Navigate to="/salesman" replace />} 
         />
         
+        {/* Short link used in the daily digest email: goes to the right Bids page for the signed-in role */}
+        <Route path="/bids" element={<Navigate to={user.isOffice ? '/office/bids' : '/salesman/bids'} replace />} />
+
         {/* Legacy routes for compatibility */}
         <Route path="/invoice/new" element={<InvoiceForm />} />
         <Route path="/invoice/edit/:id" element={<InvoiceForm />} />

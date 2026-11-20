@@ -1,0 +1,50 @@
+name: Daily bid check
+
+# Once a day: import the bid feed, post anything new to the FireBid Tracker, and email the digest.
+# Needs four repository secrets (see README, "FireBid Tracker"):
+#   SUPABASE_URL, SUPABASE_ANON_KEY, BIDS_CRON_SECRET (same value as the function secret), APP_URL
+on:
+  schedule:
+    - cron: '3 11 * * *'    # 11:03 UTC = 7:03 AM Eastern (6:03 AM in winter)
+  workflow_dispatch:         # run it by hand from the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bids-daily
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          BIDS_CRON_SECRET: ${{ secrets.BIDS_CRON_SECRET }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          for v in SUPABASE_URL SUPABASE_ANON_KEY BIDS_CRON_SECRET APP_URL; do
+            [ -n "${!v}" ] || { echo "::error::Repository secret $v is not set (see README, 'FireBid Tracker')"; exit 1; }
+          done
+
+      - name: Run the daily check
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          BIDS_CRON_SECRET: ${{ secrets.BIDS_CRON_SECRET }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          curl -sS --fail-with-body --max-time 120 -X POST "${SUPABASE_URL%/}/functions/v1/bids-daily" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "x-cron-secret: $BIDS_CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -d "{\"action\":\"daily\",\"origin\":\"${APP_URL%/}\"}" | tee result.json
+          echo
+          # Fail the run (GitHub then emails you) if the feed or the email reported a problem
+          jq -e '(.feed.ok != false) and (.digest.error == null)' result.json > /dev/null \
+            || { echo "::error::The feed or the digest email reported a problem (see the response above)"; exit 1; }

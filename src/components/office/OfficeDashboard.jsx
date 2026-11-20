@@ -11,13 +11,14 @@ const Settings = lazy(() => import('./Settings'));
 const UserManagement = lazy(() => import('./UserManagement'));
 const BackupSystem = lazy(() => import('./BackupSystem'));
 import BackupReminder from './BackupReminder';
+const BidTracker = lazy(() => import('../bids/BidTracker'));
 const ActivityLog = lazy(() => import('./ActivityLog'));
 const ReportsPage = lazy(() => import('./reports/ReportsPage'));
 import { backupScheduler } from '../../utils/backupScheduler';
 import SafeIcon from '../../common/SafeIcon';
 import * as FiIcons from 'react-icons/fi';
 
-const { FiBarChart3, FiFileText, FiUsers, FiSettings, FiUserCheck, FiShield, FiPieChart, FiPlusCircle, FiClock } = FiIcons;
+const { FiBarChart3, FiFileText, FiUsers, FiSettings, FiUserCheck, FiShield, FiPieChart, FiPlusCircle, FiClock, FiClipboard } = FiIcons;
 
 const OfficeDashboard = () => {
   const location = useLocation();
@@ -57,6 +58,7 @@ const OfficeDashboard = () => {
     { path: '/office/invoice/new', label: 'New Invoice', icon: FiPlusCircle },
     { path: '/office/invoices', label: 'Invoices', icon: FiFileText },
     { path: '/office/customers', label: 'Customers', icon: FiUsers },
+    { path: '/office/bids', label: 'Bids', icon: FiClipboard },
     { path: '/office/users', label: 'Users', icon: FiUserCheck },
     { path: '/office/reports', label: 'Reports', icon: FiPieChart },
     { path: '/office/activity', label: 'Activity', icon: FiClock },
@@ -121,6 +123,7 @@ const OfficeDashboard = () => {
             <Route path="/invoice/edit/:id" element={<InvoiceForm />} />
             <Route path="/invoices" element={<InvoiceList userRole="office" />} />
             <Route path="/customers" element={<CustomerManagement />} />
+            <Route path="/bids" element={<BidTracker />} />
             {user?.isOwner && <Route path="/users" element={<UserManagement />} />}
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/activity" element={<ActivityLog />} />

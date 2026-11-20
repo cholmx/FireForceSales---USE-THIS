@@ -92,6 +92,49 @@ setting and use the send icon on that person's card to re-send. Untick "Email an
 
 Emails are built in `supabase/functions/manage-users/index.ts`; `npm test` exercises that function against a fake Resend.
 
+## FireBid Tracker (fire-equipment bids)
+
+**Bids** in the menu (Main Admin, Office Admin and Sales all see it) is a shared board of fire-equipment bid leads for the
+42 counties we serve: 26 in Ohio, 11 in Pennsylvania, 5 in West Virginia. Each lead shows the agency, location, equipment and
+quantities, NFPA standards and brands, grant funding, due date (urgent ones highlighted), every place it was posted, a shared
+status (New / Reviewing / Quoted / Passed) and shared team notes.
+
+**How bids get in**
+
+- **By hand:** *Add / Import* -> enter a bid, or paste / upload JSON. *Sample data* loads eight made-up bids to try things out
+  (flagged "Sample", never emailed, removable by office staff).
+- **A JSON feed:** *Feed Settings* holds a feed URL (default `/data/fire_equipment_leads.json`, a file inside the app, empty to start).
+  *Refresh Feed* and the daily run read it. Any tool that can publish a JSON list of leads can feed the board this way.
+- **Pushed by another tool:** `POST {SUPABASE_URL}/functions/v1/bids-daily` with `{"action":"ingest","leads":[...]}` and the
+  `x-cron-secret` header (plus the usual `Authorization: Bearer <anon key>`). Use this for a scraper, an alert-email parser or a scheduled agent.
+
+Lead fields: `agency_name`, `state`, `county`, `city`, `solicitation_number`, `due_date` (YYYY-MM-DD), `grant_funded`, `summary`,
+`items` [`item_name`, `quantity`, `preferred_brands`, `nfpa_standards`], `sources` [`source`, `url`]. `agency_name` and `state` are required.
+
+**One lead per bid.** Every import goes through the database function `import_bid_leads`, which cleans the data and merges
+duplicates: the same solicitation number, or the same agency in the same state with due dates within 3 days and overlapping
+equipment. A merge keeps every source link and item, fills in missing fields, and never touches status or notes. Equipment is
+sorted into categories (SCBA, Turnout Gear, Extrication, Thermal Imaging, Hose/Nozzles, Rescue Gear, Apparatus, Radios, Other)
+from the item names and summary. Bids from outside the 42 counties are hidden by default; a bid with no county yet shows
+"County?" and stays visible.
+
+**The daily check** (`.github/workflows/bids-daily.yml`, 7:03 AM Eastern, or run it from the Actions tab) calls the `bids-daily`
+Edge Function, which imports the feed and then emails **one digest to everyone with an account** (sent separately, so people
+don't see each other's addresses) through Resend: new bids since the last digest, grouped by state, plus open bids due within
+7 days. Nothing is sent on days with nothing new. Office staff can also run it from *Feed Settings*, or switch the digest off there.
+
+One-time setup:
+
+1. Apply the `bid_tracker` migration and deploy the `bids-daily` Edge Function (Bolt can do both).
+2. Add a function secret `BIDS_CRON_SECRET` (a long random string). Resend secrets are the same ones used for invites.
+3. Add four GitHub repository secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY` (the public anon key), `BIDS_CRON_SECRET` (same value as step 2)
+   and `APP_URL` (the app's address, used for links in the email).
+4. Run the workflow once by hand (Actions -> Daily bid check -> Run workflow) and check the result.
+
+What this does **not** do on its own: go out and find bids. It posts and emails whatever arrives by hand, through the feed, or from
+a tool pushing leads in. Searching newspapers, state portals and township sites is a separate piece that would feed the
+`ingest` action above.
+
 ## Invoice numbers & audit trail
 
 - Every invoice gets a database-assigned sequential number shown as `FF-000123` (existing invoices are

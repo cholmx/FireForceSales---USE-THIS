@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Header from '../layout/Header';
@@ -6,10 +6,11 @@ import InvoiceForm from '../invoice/InvoiceForm';
 import InvoiceList from '../invoice/InvoiceList';
 import CustomerManagement from '../customer/CustomerManagement';
 import SalesmanStats from './SalesmanStats';
+const BidTracker = lazy(() => import('../bids/BidTracker'));
 import SafeIcon from '../../common/SafeIcon';
 import * as FiIcons from 'react-icons/fi';
 
-const { FiPlus, FiFileText, FiUsers, FiBarChart3 } = FiIcons;
+const { FiPlus, FiFileText, FiUsers, FiBarChart3, FiClipboard } = FiIcons;
 
 const SalesmanDashboard = () => {
   const location = useLocation();
@@ -36,7 +37,8 @@ const SalesmanDashboard = () => {
     { path: '/salesman', label: 'Dashboard', icon: FiBarChart3 },
     { path: '/salesman/invoice/new', label: 'New Invoice', icon: FiPlus },
     { path: '/salesman/invoices', label: 'My Invoices', icon: FiFileText },
-    { path: '/salesman/customers', label: 'Customers', icon: FiUsers }
+    { path: '/salesman/customers', label: 'Customers', icon: FiUsers },
+    { path: '/salesman/bids', label: 'Bids', icon: FiClipboard }
   ];
 
   return (
@@ -74,13 +76,16 @@ const SalesmanDashboard = () => {
         </motion.nav>
         
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-x-hidden">
+          <Suspense fallback={<div className="py-16 text-center text-sm text-gray-500">Loading...</div>}>
           <Routes>
             <Route path="/" element={<SalesmanStats />} />
             <Route path="/invoice/new" element={<InvoiceForm />} />
             <Route path="/invoice/edit/:id" element={<InvoiceForm />} />
             <Route path="/invoices" element={<InvoiceList userRole="salesman" />} />
             <Route path="/customers" element={<CustomerManagement />} />
+            <Route path="/bids" element={<BidTracker />} />
           </Routes>
+          </Suspense>
         </main>
       </div>
     </div>

@@ -9,3 +9,4 @@ export PGDATABASE=$DB
 psql -v ON_ERROR_STOP=1 -q -f supabase/tests/stub_auth.sql    # stand-ins for Supabase's auth schema + roles
 for f in supabase/migrations/*.sql; do echo "== $f"; psql -v ON_ERROR_STOP=1 -q -f "$f"; done
 psql -v ON_ERROR_STOP=1 -q -f supabase/tests/rls.test.sql
+psql -v ON_ERROR_STOP=1 -q -f supabase/tests/bids.test.sql

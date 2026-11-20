@@ -2,3 +2,6 @@ project_id = "fire-force-invoice-system"
 
 [functions.manage-users]
 verify_jwt = true
+
+[functions.bids-daily]
+verify_jwt = true
